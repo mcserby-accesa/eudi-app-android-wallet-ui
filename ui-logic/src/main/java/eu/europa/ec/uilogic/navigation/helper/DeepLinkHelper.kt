@@ -27,6 +27,7 @@ import eu.europa.ec.corelogic.util.CoreActions
 import eu.europa.ec.eudi.rqesui.infrastructure.EudiRQESUi
 import eu.europa.ec.eudi.rqesui.infrastructure.RemoteUri
 import eu.europa.ec.uilogic.extension.openUrl
+import eu.europa.ec.uilogic.navigation.DeScreens
 import eu.europa.ec.uilogic.navigation.IssuanceScreens
 import eu.europa.ec.uilogic.navigation.PresentationScreens
 import eu.europa.ec.uilogic.navigation.Screen
@@ -112,6 +113,24 @@ fun handleDeepLinkAction(
                 context = navController.context,
                 remoteUri = RemoteUri(action.link)
             )
+            return
+        }
+
+        // Accesa: route bank-app AUTHORIZE_OPERATION deep links to the de-feature
+        // confirmation screen, carrying the URI's `envelope`, `state`, and
+        // `callback` query params verbatim. The screen handles malformed input.
+        DeepLinkType.DE_AUTHORIZE -> {
+            val deAuthorizeLink = generateComposableNavigationLink(
+                screen = DeScreens.AuthorizeOperation,
+                arguments = generateComposableArguments(
+                    mapOf(
+                        "envelope" to (action.link.getQueryParameter("envelope").orEmpty()),
+                        "state" to (action.link.getQueryParameter("state").orEmpty()),
+                        "callback" to (action.link.getQueryParameter("callback").orEmpty()),
+                    )
+                )
+            )
+            navController.navigate(deAuthorizeLink)
             return
         }
     }

@@ -141,6 +141,15 @@ open class EudiComponentActivity : FragmentActivity() {
                     routerHost.getNavController(),
                     DeepLinkAction(it.link, DeepLinkType.DYNAMIC_PRESENTATION)
                 )
+            } else if (it.type == DeepLinkType.DE_AUTHORIZE) {
+                // Accesa: bank-app AUTHORIZE_OPERATION deep links route immediately
+                // to the confirmation screen, regardless of which surface the user
+                // is on. The user's mental model is "the wallet popped up to ask me
+                // about a top-up" — they don't need to land on a dashboard first.
+                handleDeepLinkAction(
+                    routerHost.getNavController(),
+                    it
+                )
             } else if (it.type != DeepLinkType.ISSUANCE) {
                 cacheIntent(intent)
                 if (routerHost.userIsLoggedInWithDocuments()) {

@@ -72,6 +72,11 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
             val rqesDocRetrievalScheme = "eudi-rqes"
             val rqesDocRetrievalHost = "*"
 
+            // Accesa: AUTHORIZE_OPERATION intent receiver
+            // (specs/protocols/de-wallet-app-api.md in the companion repo).
+            val eudiDeAuthorizeScheme = "eudi-de-authorize"
+            val eudiDeAuthorizeHost = "*"
+
             with(pluginManager) {
                 apply("com.android.library")
                 apply("project.android.library.kover")
@@ -105,6 +110,9 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                     addConfigField("RQES_HOST", rqesHost)
                     addConfigField("RQES_DEEPLINK", "$rqesScheme://$rqesHost$rqesPath")
                     addConfigField("RQES_DOC_RETRIEVAL_SCHEME", rqesDocRetrievalScheme)
+
+                    // Accesa
+                    addConfigField("EUDI_DE_AUTHORIZE_SCHEME", eudiDeAuthorizeScheme)
 
                     // Manifest placeholders for Wallet deepLink
                     manifestPlaceholders["deepLinkScheme"] = walletScheme
@@ -140,6 +148,10 @@ class AndroidLibraryConventionPlugin : Plugin<Project> {
                     // Manifest placeholders used for RQES Document Retrieval
                     manifestPlaceholders["rqesDocRetrievalScheme"] = rqesDocRetrievalScheme
                     manifestPlaceholders["rqesDocRetrievalHost"] = rqesDocRetrievalHost
+
+                    // Accesa: AUTHORIZE_OPERATION
+                    manifestPlaceholders["eudiDeAuthorizeScheme"] = eudiDeAuthorizeScheme
+                    manifestPlaceholders["eudiDeAuthorizeHost"] = eudiDeAuthorizeHost
                 }
                 configureFlavors(this)
                 configureGradleManagedDevices(this)

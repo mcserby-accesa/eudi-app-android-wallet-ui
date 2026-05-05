@@ -31,6 +31,11 @@ moduleConfig {
     module = LibraryModule.StartupFeature
 }
 
+dependencies {
+    // Accesa: SplashInteractor routes into DE QR-config when WalletState is empty.
+    implementation(project(LibraryModule.DeLogic.path))
+}
+
 excludeFromKoverReport(
     excludedClasses = KoverExclusionRules.StartupFeature.classes,
     excludedPackages = KoverExclusionRules.StartupFeature.packages,

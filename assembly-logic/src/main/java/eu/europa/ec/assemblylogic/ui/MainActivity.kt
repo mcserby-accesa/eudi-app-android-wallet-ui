@@ -21,6 +21,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import eu.europa.ec.commonfeature.router.featureCommonGraph
 import eu.europa.ec.dashboardfeature.router.featureDashboardGraph
+import eu.europa.ec.defeature.router.featureDeGraph
 import eu.europa.ec.issuancefeature.router.featureIssuanceGraph
 import eu.europa.ec.presentationfeature.router.presentationGraph
 import eu.europa.ec.proximityfeature.router.featureProximityGraph
@@ -39,6 +40,7 @@ class MainActivity : EudiComponentActivity() {
                 presentationGraph(it)
                 featureProximityGraph(it)
                 featureIssuanceGraph(it)
+                featureDeGraph(it)
             }
         }
     }

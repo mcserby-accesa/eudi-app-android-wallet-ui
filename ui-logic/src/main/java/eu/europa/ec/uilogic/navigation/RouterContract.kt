@@ -112,6 +112,24 @@ sealed class IssuanceScreens {
     )
 }
 
+// Accesa fork — Digital Euro flow surfaces.
+sealed class DeScreens {
+    data object QrConfig : Screen(name = "DE_QR_CONFIG")
+
+    /**
+     * Confirmation screen for an `AUTHORIZE_OPERATION` intent. Receives the URI
+     * query parameters from the bank app's `eudi-de-authorize://?…` deep link:
+     *  - `envelope` — base64url-encoded operation envelope (signed back verbatim).
+     *  - `state`    — opaque correlation token returned to the bank app verbatim.
+     *  - `callback` — bank-app callback URI; the wallet fires `Intent.ACTION_VIEW`
+     *    on it with `?state=<state>&authorization=<JWT>` (or `&error=<code>`).
+     */
+    data object AuthorizeOperation : Screen(
+        name = "DE_AUTHORIZE_OPERATION",
+        parameters = "?envelope={envelope}&state={state}&callback={callback}"
+    )
+}
+
 sealed class ModuleRoute(val route: String) : NavigatableItem {
     data object StartupModule : ModuleRoute("STARTUP_MODULE")
     data object CommonModule : ModuleRoute("COMMON_MODULE")
@@ -119,4 +137,7 @@ sealed class ModuleRoute(val route: String) : NavigatableItem {
     data object PresentationModule : ModuleRoute("PRESENTATION_MODULE")
     data object ProximityModule : ModuleRoute("PROXIMITY_MODULE")
     data object IssuanceModule : ModuleRoute("ISSUANCE_MODULE")
+
+    // Accesa fork
+    data object DeModule : ModuleRoute("DE_MODULE")
 }

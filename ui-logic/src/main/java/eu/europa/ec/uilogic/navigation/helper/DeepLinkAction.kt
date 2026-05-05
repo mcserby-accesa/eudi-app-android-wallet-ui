@@ -58,6 +58,11 @@ enum class DeepLinkType(
     ),
     RQES_DOC_RETRIEVAL(
         schemas = listOf(BuildConfig.RQES_DOC_RETRIEVAL_SCHEME)
+    ),
+
+    // Accesa fork — AUTHORIZE_OPERATION intent receiver.
+    DE_AUTHORIZE(
+        schemas = listOf(BuildConfig.EUDI_DE_AUTHORIZE_SCHEME)
     );
 
     companion object {
@@ -81,6 +86,10 @@ enum class DeepLinkType(
 
             RQES_DOC_RETRIEVAL.schemas.contains(scheme) -> {
                 RQES_DOC_RETRIEVAL
+            }
+
+            DE_AUTHORIZE.schemas.contains(scheme) -> {
+                DE_AUTHORIZE
             }
 
             else -> EXTERNAL

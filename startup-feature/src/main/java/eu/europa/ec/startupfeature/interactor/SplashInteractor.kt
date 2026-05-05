@@ -25,12 +25,14 @@ import eu.europa.ec.commonfeature.config.OnBackNavigationConfig
 import eu.europa.ec.commonfeature.interactor.QuickPinInteractor
 import eu.europa.ec.commonfeature.model.PinFlow
 import eu.europa.ec.corelogic.controller.WalletCoreDocumentsController
+import eu.europa.ec.delogic.state.WalletStateRepository
 import eu.europa.ec.resourceslogic.R
 import eu.europa.ec.resourceslogic.provider.ResourceProvider
 import eu.europa.ec.uilogic.config.ConfigNavigation
 import eu.europa.ec.uilogic.config.NavigationType
 import eu.europa.ec.uilogic.navigation.CommonScreens
 import eu.europa.ec.uilogic.navigation.DashboardScreens
+import eu.europa.ec.uilogic.navigation.DeScreens
 import eu.europa.ec.uilogic.navigation.IssuanceScreens
 import eu.europa.ec.uilogic.navigation.helper.generateComposableArguments
 import eu.europa.ec.uilogic.navigation.helper.generateComposableNavigationLink
@@ -45,7 +47,8 @@ class SplashInteractorImpl(
     private val uiSerializer: UiSerializer,
     private val resourceProvider: ResourceProvider,
     private val walletCoreDocumentsController: WalletCoreDocumentsController,
-    private val configLogic: ConfigLogic
+    private val configLogic: ConfigLogic,
+    private val walletStateRepository: WalletStateRepository,
 ) : SplashInteractor {
 
     private val hasDocuments: Boolean
@@ -54,13 +57,17 @@ class SplashInteractorImpl(
     private val shouldActivateWithPid: Boolean
         get() = configLogic.forcePidActivation && !hasDocuments
 
-    override suspend fun getAfterSplashRoute(): String = when (quickPinInteractor.hasPin()) {
-        true -> {
-            getBiometricsConfig()
+    override suspend fun getAfterSplashRoute(): String {
+        // Accesa: empty WalletState means the wallet has not yet been bootstrapped
+        // with a PID-issuer URL. Route into the DE QR-config screen so the user
+        // can scan the workshop QR before anything else happens.
+        if (walletStateRepository.current() == null) {
+            return DeScreens.QrConfig.screenRoute
         }
 
-        false -> {
-            getQuickPinConfig()
+        return when (quickPinInteractor.hasPin()) {
+            true -> getBiometricsConfig()
+            false -> getQuickPinConfig()
         }
     }
 

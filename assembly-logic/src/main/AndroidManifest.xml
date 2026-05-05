@@ -219,6 +219,20 @@
 
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+
+            <!-- Accesa: AUTHORIZE_OPERATION receiver. Bank apps invoke the wallet
+                 via Intent.ACTION_VIEW eudi-de-authorize://?envelope=…&state=…&callback=…
+                 See specs/protocols/de-wallet-app-api.md in the companion repo. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:host="${eudiDeAuthorizeHost}"
+                    android:scheme="${eudiDeAuthorizeScheme}" />
+            </intent-filter>
         </activity>
 
         <provider

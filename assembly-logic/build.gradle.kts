@@ -22,6 +22,8 @@ import project.convention.logic.config.LibraryModule.BusinessLogic
 import project.convention.logic.config.LibraryModule.CommonFeature
 import project.convention.logic.config.LibraryModule.CoreLogic
 import project.convention.logic.config.LibraryModule.DashboardFeature
+import project.convention.logic.config.LibraryModule.DeFeature
+import project.convention.logic.config.LibraryModule.DeLogic
 import project.convention.logic.config.LibraryModule.IssuanceFeature
 import project.convention.logic.config.LibraryModule.NetworkLogic
 import project.convention.logic.config.LibraryModule.PresentationFeature
@@ -72,6 +74,10 @@ dependencies {
     api(project(PresentationFeature.path))
     api(project(ProximityFeature.path))
     api(project(IssuanceFeature.path))
+
+    // Accesa fork
+    api(project(DeLogic.path))
+    api(project(DeFeature.path))
 
     // Modules Kover Report
     koverModules.forEach {

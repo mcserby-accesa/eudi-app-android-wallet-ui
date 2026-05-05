@@ -38,7 +38,8 @@ enum class LibraryModule(val path: String) {
     IssuanceFeature(":issuance-feature"),
 
     // Accesa fork additions
-    DeLogic(":de-logic");
+    DeLogic(":de-logic"),
+    DeFeature(":de-feature");
 
     val isLogicModule: Boolean
         get() {
