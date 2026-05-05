@@ -19,6 +19,7 @@ package eu.europa.ec.corelogic.config
 import android.content.Context
 import eu.europa.ec.corelogic.BuildConfig
 import eu.europa.ec.corelogic.model.DocumentIdentifier
+import eu.europa.ec.delogic.state.WalletStateRepository
 import eu.europa.ec.eudi.wallet.EudiWalletConfig
 import eu.europa.ec.eudi.wallet.document.CreateDocumentSettings.CredentialPolicy
 import eu.europa.ec.eudi.wallet.issue.openid4vci.OpenId4VciManager
@@ -26,11 +27,15 @@ import eu.europa.ec.eudi.wallet.issue.openid4vci.dpop.DPopConfig
 import eu.europa.ec.eudi.wallet.transfer.openId4vp.ClientIdScheme
 import eu.europa.ec.eudi.wallet.transfer.openId4vp.Format
 import eu.europa.ec.resourceslogic.R
+import kotlinx.coroutines.runBlocking
 import java.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
 internal class WalletCoreConfigImpl(
-    private val context: Context
+    private val context: Context,
+    // Accesa: read at issuance time so the upstream OID4VCI client targets the
+    // PID issuer the user configured via QR-config, not a hard-coded constant.
+    private val walletStateRepository: WalletStateRepository,
 ) : WalletCoreConfig {
 
     private var _config: EudiWalletConfig? = null
@@ -86,28 +91,51 @@ internal class WalletCoreConfigImpl(
         }
 
     override val issuersConfig: List<VciConfig>
-        get() = listOf(
-            VciConfig(
-                config = OpenId4VciManager.Config.Builder()
-                    .withIssuerUrl(issuerUrl = "https://issuer.eudiw.dev")
-                    .withClientAuthenticationType(OpenId4VciManager.ClientAuthenticationType.AttestationBased)
-                    .withAuthFlowRedirectionURI(BuildConfig.ISSUE_AUTHORIZATION_DEEPLINK)
-                    .withParUsage(OpenId4VciManager.Config.ParUsage.IF_SUPPORTED)
-                    .withDPopConfig(DPopConfig.Default)
-                    .build(),
-                order = 0
-            ),
-            VciConfig(
-                config = OpenId4VciManager.Config.Builder()
-                    .withIssuerUrl(issuerUrl = "https://issuer-backend.eudiw.dev")
-                    .withClientAuthenticationType(OpenId4VciManager.ClientAuthenticationType.AttestationBased)
-                    .withAuthFlowRedirectionURI(BuildConfig.ISSUE_AUTHORIZATION_DEEPLINK)
-                    .withParUsage(OpenId4VciManager.Config.ParUsage.IF_SUPPORTED)
-                    .withDPopConfig(DPopConfig.Default)
-                    .build(),
-                order = 1
+        get() {
+            // Accesa: when the user has configured a PID issuer via QR-config,
+            // route the upstream OID4VCI flow through it exclusively. The fallback
+            // below is the unmodified upstream demo configuration so that an
+            // unprovisioned APK still functions for the EU reference flow.
+            val runtimePidIssuerUrl = runBlocking {
+                walletStateRepository.current()?.pidIssuerUrl
+            }
+            if (runtimePidIssuerUrl != null) {
+                return listOf(
+                    VciConfig(
+                        config = OpenId4VciManager.Config.Builder()
+                            .withIssuerUrl(issuerUrl = runtimePidIssuerUrl)
+                            .withClientAuthenticationType(OpenId4VciManager.ClientAuthenticationType.AttestationBased)
+                            .withAuthFlowRedirectionURI(BuildConfig.ISSUE_AUTHORIZATION_DEEPLINK)
+                            .withParUsage(OpenId4VciManager.Config.ParUsage.IF_SUPPORTED)
+                            .withDPopConfig(DPopConfig.Default)
+                            .build(),
+                        order = 0
+                    )
+                )
+            }
+            return listOf(
+                VciConfig(
+                    config = OpenId4VciManager.Config.Builder()
+                        .withIssuerUrl(issuerUrl = "https://issuer.eudiw.dev")
+                        .withClientAuthenticationType(OpenId4VciManager.ClientAuthenticationType.AttestationBased)
+                        .withAuthFlowRedirectionURI(BuildConfig.ISSUE_AUTHORIZATION_DEEPLINK)
+                        .withParUsage(OpenId4VciManager.Config.ParUsage.IF_SUPPORTED)
+                        .withDPopConfig(DPopConfig.Default)
+                        .build(),
+                    order = 0
+                ),
+                VciConfig(
+                    config = OpenId4VciManager.Config.Builder()
+                        .withIssuerUrl(issuerUrl = "https://issuer-backend.eudiw.dev")
+                        .withClientAuthenticationType(OpenId4VciManager.ClientAuthenticationType.AttestationBased)
+                        .withAuthFlowRedirectionURI(BuildConfig.ISSUE_AUTHORIZATION_DEEPLINK)
+                        .withParUsage(OpenId4VciManager.Config.ParUsage.IF_SUPPORTED)
+                        .withDPopConfig(DPopConfig.Default)
+                        .build(),
+                    order = 1
+                )
             )
-        )
+        }
 
     override val documentIssuanceConfig: DocumentIssuanceConfig
         get() = DocumentIssuanceConfig(

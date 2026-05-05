@@ -39,6 +39,11 @@ dependencies {
     implementation(project(LibraryModule.AuthenticationLogic.path))
     implementation(project(LibraryModule.NetworkLogic.path))
 
+    // Accesa: WalletCoreConfigImpl reads `pidIssuerUrl` from WalletStateRepository
+    // at issuance time, so the upstream OID4VCI flow targets whichever issuer
+    // the user configured via the QR-config screen.
+    implementation(project(LibraryModule.DeLogic.path))
+
     implementation(libs.androidx.biometric)
 
     testImplementation(project(LibraryModule.TestLogic.path))

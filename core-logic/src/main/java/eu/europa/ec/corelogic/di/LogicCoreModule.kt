@@ -33,6 +33,7 @@ import eu.europa.ec.corelogic.controller.WalletCoreTransactionLogController
 import eu.europa.ec.corelogic.controller.WalletCoreTransactionLogControllerImpl
 import eu.europa.ec.corelogic.provider.WalletCoreAttestationProvider
 import eu.europa.ec.corelogic.provider.WalletCoreAttestationProviderImpl
+import eu.europa.ec.delogic.state.WalletStateRepository
 import eu.europa.ec.eudi.wallet.EudiWallet
 import eu.europa.ec.networklogic.repository.WalletAttestationRepository
 import eu.europa.ec.resourceslogic.provider.ResourceProvider
@@ -77,7 +78,8 @@ fun provideEudiWallet(
 @Single
 fun provideWalletCoreConfig(
     context: Context,
-): WalletCoreConfig = WalletCoreConfigImpl(context)
+    walletStateRepository: WalletStateRepository,
+): WalletCoreConfig = WalletCoreConfigImpl(context, walletStateRepository)
 
 @Factory
 fun provideWalletCoreLogController(logController: LogController): WalletCoreLogController =
