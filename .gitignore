@@ -54,3 +54,8 @@ fastlane/report.xml
 
 # extensions
 *.apk
+
+# Accesa fork additions
+
+# Claude Code local-only settings (per-machine permissions)
+.claude/settings.local.json

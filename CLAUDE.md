@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Fork context — read this first
 
-This is the **Accesa fork** of the EU `eudi-app-android-wallet-ui`, extending it with **Digital Euro** flows on top of the upstream EUDI identity surface. The fork-level rules (branch strategy, upstream-sync workflow, what we add on top, conventions for keeping diffs clean against upstream) live in `FORK.md` — read it before doing any structural work.
+This is the **Accesa fork** of the EU `eudi-app-android-wallet-ui`. Per [ADR 0004](file:///C:/Users/mihai.serban/IdeaProjects/instant-payments-initiative/plan/decisions/0004-two-app-model-wallet-and-bank-app.md) (companion repo) the system is a **two-app model**: this wallet stays **bank-agnostic** and only owns identity primitives + an intent-based authorisation API; per-bank UI / balances / top-up live in a separate greenfield `bank-app` (not in this repo). The fork-level rules (branch strategy, upstream-sync workflow, conventions for keeping diffs clean against upstream) live in `FORK.md` — read it before doing any structural work.
 
 Key implications:
 - **All Accesa work happens on `accesa-de`**, never on `main`. `main` only tracks `upstream/main` cleanly.
 - Topic branches go `accesa-de/<feature>` and PR back into `accesa-de`.
-- The **HTTP contracts** for Accesa flows (`/bank/onboard/*`, `/bank/de/top-up/*`, `/pid/par`, …) are **owned by the companion repo** at `C:\Users\mihai.serban\IdeaProjects\instant-payments-initiative` under `specs/components/`. The wallet here is the *implementation*; the spec repo is the *authority*. Do not modify HTTP contracts in this repo — flag any contract change to the user so it can be made spec-side first.
+- **Specs are owned by the companion repo** at `C:\Users\mihai.serban\IdeaProjects\instant-payments-initiative` under `specs/`. Particularly authoritative for this repo: `specs/components/mobile-wallet.md` (M1 scope), `specs/protocols/de-wallet-app-api.md` (PRESENT_PID + AUTHORIZE_OPERATION intent contract), and the relevant ADRs in `plan/decisions/`. The wallet here is the *implementation*; the spec repo is the *authority*. Do not modify specs in this repo — flag any contract question to the user so it can be made spec-side first.
+- The wallet does NOT call any bank backend directly. It receives `Intent.ACTION_VIEW` from bank apps and replies via callback URIs. The only HTTP backend the wallet contacts is the **PID issuer** during initial OID4VCI issuance.
 - New Accesa-specific Gradle modules should be named `de-feature/*` or `de-logic/*` so they are visually distinct from upstream `*-feature` / `*-logic` modules. (None exist yet at fork time — M1 will introduce them.)
 - Run `./gradlew spotlessApply` before committing on `accesa-de` so PR diffs against upstream stay clean.
 
