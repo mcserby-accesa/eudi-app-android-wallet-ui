@@ -84,6 +84,37 @@ The upstream repo's [README](README.md) carries an EUPL 1.2 licence and a "refer
 - Code style: upstream sets `kotlin.code.style=official` in `gradle.properties` but does **not** configure Spotless or ktlint as Gradle tasks. Format new code via Android Studio's built-in Kotlin formatter before committing so diffs against upstream stay clean.
 - Topic-branch naming: prefer flat names (e.g. `pr1-de-logic-scaffold`) and target `accesa-de` in the PR. Git refuses to create `accesa-de/<feature>` branches because `accesa-de` already exists as a leaf ref; the slash convention from earlier drafts of this doc doesn't work in practice.
 
+## Wallet ⇄ App API — `eudi-openid4vp://` (PRESENT_PID)
+
+The **`PRESENT_PID`** primitive of the wallet ⇄ app contract (companion repo `specs/protocols/de-wallet-app-api.md`) reuses the upstream `eudi-openid4vp://` deep link **without any Accesa-specific code**. Verified by tracing the upstream pathway end-to-end:
+
+| Stage | File | Behaviour |
+|---|---|---|
+| Manifest filter | `assembly-logic/src/main/AndroidManifest.xml:121–125` | Catches `eudi-openid4vp://` (placeholder-driven) |
+| URI parsing | `ui-logic/.../navigation/helper/DeepLinkAction.kt` | `DeepLinkType.parse` returns `OPENID4VP` for the scheme |
+| Activity entry | `ui-logic/.../container/EudiComponentActivity.kt::handleDeepLink` | Caches the intent; if the user already has a PID (`userIsLoggedInWithDocuments()`), pops to the dashboard |
+| Dashboard pickup | `dashboard-feature/.../DashboardScreen.kt:172` (`LifecycleEffect ON_RESUME`) | Reads the cached intent and fires `Event.Init(intent)` |
+| Dashboard routing | `dashboard-feature/.../DashboardViewModel.kt:271–289` | Builds a `RequestUriConfig(PresentationMode.OpenId4Vp(uri, …))` and emits `OpenDeepLinkAction` |
+| Final navigation | `ui-logic/.../navigation/helper/DeepLinkHelper.kt::handleDeepLinkAction` | Routes `OPENID4VP` → `PresentationScreens.PresentationRequest` with the URI as the `requestUriConfig` argument |
+
+**No internal-vs-external distinction.** The handler is symmetric — whether the wallet's own UI navigates to OID4VP or another package fires `Intent.ACTION_VIEW eudi-openid4vp://?…`, both land in the same code path. The only gate is `userIsLoggedInWithDocuments()`, which is exactly the right check (an unprovisioned wallet has nothing to present).
+
+### Manual smoke test
+
+Once you've installed `app-dev-debug.apk` on a device or emulator that already has a PID issued (run through QR-config + AddDocument first), fire an OID4VP intent from outside the wallet's package:
+
+```sh
+adb shell am start -W -a android.intent.action.VIEW \
+  -d 'eudi-openid4vp://?request_uri=https://your-bank-backend/bank/onboard/request/abc123' \
+  eu.europa.ec.euidi.dev
+```
+
+Expected: the wallet's `MainActivity` is brought to the foreground (singleTask), `EudiComponentActivity.onNewIntent` fires, the URI flows through the cached-intent mechanism, the dashboard picks it up on resume, and the `PresentationRequest` consent screen renders. After confirm + biometric, the wallet POSTs the VP token to the bank's `response_uri` (per OID4VP `direct_post` mode). The bank app, having registered an inbound filter for its own callback, observes the bank backend's "you are now logged in" response by polling `GET /bank/onboard/result/{onboardingId}`.
+
+If the wallet has no PID issued yet, the intent is cached but no navigation happens. M1 design: bank apps assume the user has bootstrapped the wallet first (QR-config → PID issuance), and route through their own onboarding error UI if not.
+
+---
+
 ## Next steps
 
 1. Open the project in Android Studio (`File → Open` → this directory). Wait for the first Gradle sync to finish.
