@@ -6,6 +6,7 @@
 package eu.europa.ec.delogic.di
 
 import eu.europa.ec.businesslogic.controller.storage.PrefsController
+import eu.europa.ec.delogic.config.WalletConfigDecoder
 import eu.europa.ec.delogic.envelope.EnvelopeDecoder
 import eu.europa.ec.delogic.jwt.AuthorizationJwtBuilder
 import eu.europa.ec.delogic.jwt.NonceProvider
@@ -29,6 +30,9 @@ fun provideWalletStateRepository(prefsController: PrefsController): WalletStateR
 
 @Factory
 fun provideEnvelopeDecoder(): EnvelopeDecoder = EnvelopeDecoder()
+
+@Factory
+fun provideWalletConfigDecoder(): WalletConfigDecoder = WalletConfigDecoder()
 
 @Factory
 fun provideNonceProvider(): NonceProvider = SecureRandomNonceProvider()

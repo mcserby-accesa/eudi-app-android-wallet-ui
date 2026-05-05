@@ -54,24 +54,27 @@ class SplashInteractorImpl(
     private val hasDocuments: Boolean
         get() = walletCoreDocumentsController.getAllDocuments().isNotEmpty()
 
-    private val shouldActivateWithPid: Boolean
-        get() = configLogic.forcePidActivation && !hasDocuments
-
     override suspend fun getAfterSplashRoute(): String {
         // Accesa: empty WalletState means the wallet has not yet been bootstrapped
         // with a PID-issuer URL. Route into the DE QR-config screen so the user
         // can scan the workshop QR before anything else happens.
-        if (walletStateRepository.current() == null) {
+        val walletStateConfigured = walletStateRepository.current() != null
+        if (!walletStateConfigured) {
             return DeScreens.QrConfig.screenRoute
         }
 
+        // Accesa: a configured WalletState with no documents yet means we are
+        // post-QR-config / pre-issuance — drive PIN setup straight on into PID
+        // issuance per `mobile-wallet.md` §First launch.
+        val shouldActivateWithPid = (configLogic.forcePidActivation || !hasDocuments)
+
         return when (quickPinInteractor.hasPin()) {
-            true -> getBiometricsConfig()
-            false -> getQuickPinConfig()
+            true -> getBiometricsConfig(shouldActivateWithPid)
+            false -> getQuickPinConfig(shouldActivateWithPid)
         }
     }
 
-    private fun getQuickPinConfig(): String {
+    private fun getQuickPinConfig(shouldActivateWithPid: Boolean): String {
         return generateComposableNavigationLink(
             screen = CommonScreens.QuickPin,
             arguments = generateComposableArguments(
@@ -86,9 +89,7 @@ class SplashInteractorImpl(
         )
     }
 
-    private fun getBiometricsConfig(): String {
-
-        val shouldActivateWithPid = configLogic.forcePidActivation && !hasDocuments
+    private fun getBiometricsConfig(shouldActivateWithPid: Boolean): String {
 
         return generateComposableNavigationLink(
             screen = CommonScreens.Biometric,
