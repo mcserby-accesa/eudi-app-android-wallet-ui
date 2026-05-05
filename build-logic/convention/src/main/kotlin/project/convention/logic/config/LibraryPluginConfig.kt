@@ -35,7 +35,10 @@ enum class LibraryModule(val path: String) {
     DashboardFeature(":dashboard-feature"),
     PresentationFeature(":presentation-feature"),
     ProximityFeature(":proximity-feature"),
-    IssuanceFeature(":issuance-feature");
+    IssuanceFeature(":issuance-feature"),
+
+    // Accesa fork additions
+    DeLogic(":de-logic");
 
     val isLogicModule: Boolean
         get() {

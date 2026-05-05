@@ -67,3 +67,6 @@ include(":baseline-profile")
 include(":authentication-logic")
 include(":core-logic")
 include(":storage-logic")
+
+// Accesa fork additions
+include(":de-logic")

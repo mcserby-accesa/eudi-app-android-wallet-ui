@@ -79,9 +79,10 @@ The upstream repo's [README](README.md) carries an EUPL 1.2 licence and a "refer
 
 ## Conventions inherited from upstream
 
-- Multi-module Gradle build. New Accesa-specific modules go under `de-feature/` or `de-logic/` (TBD when first added) to keep them visually separate from upstream `*-feature` / `*-logic` modules.
+- Multi-module Gradle build. New Accesa-specific modules go under `de-feature/` or `de-logic/` to keep them visually separate from upstream `*-feature` / `*-logic` modules. The convention plugin's `LibraryModule` enum gets one entry per new module (e.g. `DeLogic(":de-logic")`) — small upstream touch, trivially resolvable on rebases.
 - Signing: upstream's `signing.properties` is gitignored; debug builds work without it.
-- Spotless / ktlint: upstream-configured. Run `./gradlew spotlessApply` before committing on `accesa-de` so PR diffs against upstream stay clean.
+- Code style: upstream sets `kotlin.code.style=official` in `gradle.properties` but does **not** configure Spotless or ktlint as Gradle tasks. Format new code via Android Studio's built-in Kotlin formatter before committing so diffs against upstream stay clean.
+- Topic-branch naming: prefer flat names (e.g. `pr1-de-logic-scaffold`) and target `accesa-de` in the PR. Git refuses to create `accesa-de/<feature>` branches because `accesa-de` already exists as a leaf ref; the slash convention from earlier drafts of this doc doesn't work in practice.
 
 ## Next steps
 
