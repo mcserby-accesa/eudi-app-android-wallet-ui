@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ~ Accesa fork — Digital Euro extensions to the EUDI reference wallet.
+  ~ SPDX-License-Identifier: EUPL-1.2
+  ~
+  ~ Debug-only override of the upstream network-security config. Permits
+  ~ cleartext HTTP so that first-launch QR-config can hit the local pid-issuer
+  ~ on the workshop emulator (typically http://10.0.2.2:8092 — Android
+  ~ emulator's alias for the host's loopback) or on a LAN-attached machine
+  ~ during a physical-device demo. The companion repo's M1 backend services
+  ~ all listen on plain HTTP with HTTP/2 (h2c) by design.
+  ~
+  ~ Release builds inherit the strict TLS-only base-config from
+  ~ ../../../main/res/xml/network_security_config.xml — this file is only
+  ~ packaged into apps built with the `debug` build type (devDebug, demoDebug).
+  -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
