@@ -143,14 +143,22 @@ internal class WalletCoreConfigImpl(
                 policy = CredentialPolicy.RotateUse,
                 numberOfCredentials = 1
             ),
+            // Accesa: PID is overridden from upstream's OneTimeUse, N=10 to a
+            // single rotated credential. The protocol in
+            // `specs/protocols/de-wallet-app-api.md` requires the AUTHORIZE_OPERATION
+            // JWT to be signed by the same key the bank pinned as `cnf.jwk` at
+            // onboarding — a stable, non-rotating device key. M1 ships single-key
+            // because the bank is the sole verifier; multi-key with per-RP
+            // credential tracking is a deferred direction (see memory note
+            // "M1 single-key cnf.jwk binding" + future ADR for re-bind).
             documentSpecificRules = mapOf(
                 DocumentIdentifier.MdocPid to DocumentIssuanceRule(
-                    policy = CredentialPolicy.OneTimeUse,
-                    numberOfCredentials = 10
+                    policy = CredentialPolicy.RotateUse,
+                    numberOfCredentials = 1
                 ),
                 DocumentIdentifier.SdJwtPid to DocumentIssuanceRule(
-                    policy = CredentialPolicy.OneTimeUse,
-                    numberOfCredentials = 10
+                    policy = CredentialPolicy.RotateUse,
+                    numberOfCredentials = 1
                 ),
             ),
             reissuanceRule = ReIssuanceRule(

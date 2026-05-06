@@ -143,14 +143,17 @@ internal class WalletCoreConfigImpl(
                 policy = CredentialPolicy.RotateUse,
                 numberOfCredentials = 1
             ),
+            // Accesa: PID is overridden from upstream's OneTimeUse, N=60 to a
+            // single rotated credential. See the demo flavor's WalletCoreConfigImpl
+            // for the rationale — same protocol contract applies.
             documentSpecificRules = mapOf(
                 DocumentIdentifier.MdocPid to DocumentIssuanceRule(
-                    policy = CredentialPolicy.OneTimeUse,
-                    numberOfCredentials = 60
+                    policy = CredentialPolicy.RotateUse,
+                    numberOfCredentials = 1
                 ),
                 DocumentIdentifier.SdJwtPid to DocumentIssuanceRule(
-                    policy = CredentialPolicy.OneTimeUse,
-                    numberOfCredentials = 60
+                    policy = CredentialPolicy.RotateUse,
+                    numberOfCredentials = 1
                 ),
             ),
             reissuanceRule = ReIssuanceRule(
