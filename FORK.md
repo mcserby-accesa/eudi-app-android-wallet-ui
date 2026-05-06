@@ -82,7 +82,11 @@ The upstream repo's [README](README.md) carries an EUPL 1.2 licence and a "refer
 - Multi-module Gradle build. New Accesa-specific modules go under `de-feature/` or `de-logic/` to keep them visually separate from upstream `*-feature` / `*-logic` modules. The convention plugin's `LibraryModule` enum gets one entry per new module (e.g. `DeLogic(":de-logic")`) — small upstream touch, trivially resolvable on rebases.
 - Signing: upstream's `signing.properties` is gitignored; debug builds work without it.
 - Code style: upstream sets `kotlin.code.style=official` in `gradle.properties` but does **not** configure Spotless or ktlint as Gradle tasks. Format new code via Android Studio's built-in Kotlin formatter before committing so diffs against upstream stay clean.
-- Topic-branch naming: prefer flat names (e.g. `pr1-de-logic-scaffold`) and target `accesa-de` in the PR. Git refuses to create `accesa-de/<feature>` branches because `accesa-de` already exists as a leaf ref; the slash convention from earlier drafts of this doc doesn't work in practice.
+- Topic-branch naming: from PR7 onwards we commit straight to `accesa-de` and push after each logical change. The earlier `prN-…` topic-branch convention added friction without buying review value; PR-numbered commits on `accesa-de` (clear commit messages, immediate push) are the working unit. Git refuses to create `accesa-de/<feature>` branches because `accesa-de` already exists as a leaf ref, so the slash convention from older drafts of this doc never worked anyway.
+
+## End-to-end smoke test
+
+Manual checklist for verifying wallet + bank-app + backends together: [`wiki/m1_smoke_test.md`](wiki/m1_smoke_test.md). Run it after any change to the intent surface (`AUTHORIZE_OPERATION` envelope, signing, callback wiring) and before every demo.
 
 ## Wallet ⇄ App API — `eudi-openid4vp://` (PRESENT_PID)
 
