@@ -42,6 +42,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import eu.europa.ec.delogic.envelope.OperationEnvelope
 import eu.europa.ec.delogic.envelope.OperationType
+import eu.europa.ec.delogic.envelope.Payee
 import eu.europa.ec.uilogic.extension.finish
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
@@ -140,16 +141,25 @@ private fun ConfirmBody(
             fontWeight = FontWeight.SemiBold,
         )
 
-        Text(
-            text = envelope.description,
-            style = MaterialTheme.typography.bodyLarge,
-        )
+        // Render branches on envelope.type per de-wallet-app-api.md §AUTHORIZE_OPERATION
+        // step 4. The wallet stays bank-IBAN-blind in every branch — payer.iban /
+        // payer.holderName / payee.merchantId are NEVER displayed even though the
+        // signed JWT carries the full envelope verbatim.
+        when (envelope.type) {
+            OperationType.PAYMENT -> envelope.payee?.let { PaymentPrimary(it) }
+            OperationType.TOP_UP, OperationType.REDEEM -> Text(
+                text = envelope.description,
+                style = MaterialTheme.typography.bodyLarge,
+            )
+        }
 
         Spacer(Modifier.height(8.dp))
 
         FieldRow(label = "Amount", value = formatAmount(envelope.amount, envelope.currency))
         FieldRow(label = "Bank", value = envelope.bankDisplayName ?: envelope.bic)
-        FieldRow(label = "Operation", value = labelFor(envelope.type))
+        if (envelope.type != OperationType.PAYMENT) {
+            FieldRow(label = "Operation", value = labelFor(envelope.type))
+        }
 
         Spacer(Modifier.height(24.dp))
 
@@ -175,6 +185,44 @@ private fun ConfirmBody(
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(vertical = 12.dp),
                 ) { Text("Confirm") }
+            }
+        }
+    }
+}
+
+/**
+ * Payment primary block per `mobile-wallet.md` §AUTHORIZE_OPERATION
+ * `type: "payment"`:
+ *
+ *     Pay  <merchantName>
+ *          <description, if present>
+ *
+ * `payee.merchantId` is never displayed — it's the merchant's NCB userId,
+ * opaque to the user and signed only for bank-side cross-check.
+ */
+@Composable
+private fun PaymentPrimary(payee: Payee) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = "Pay",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                text = payee.merchantName,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            payee.description?.takeIf { it.isNotBlank() }?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

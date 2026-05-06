@@ -49,8 +49,10 @@ class EnvelopeDecoder(
         if (envelope.paymentRef.isBlank()) return EnvelopeDecodeResult.Failure.Malformed
         if (envelope.bic.isBlank()) return EnvelopeDecodeResult.Failure.Malformed
         if (envelope.description.isBlank()) return EnvelopeDecodeResult.Failure.Malformed
-        if (envelope.type == OperationType.PAYMENT && envelope.payee == null) {
-            return EnvelopeDecodeResult.Failure.Malformed
+        if (envelope.type == OperationType.PAYMENT) {
+            val payee = envelope.payee ?: return EnvelopeDecodeResult.Failure.Malformed
+            if (payee.merchantId.isBlank()) return EnvelopeDecodeResult.Failure.Malformed
+            if (payee.merchantName.isBlank()) return EnvelopeDecodeResult.Failure.Malformed
         }
 
         val expiry = runCatching { Instant.parse(envelope.expiry) }.getOrNull()

@@ -71,6 +71,61 @@ class EnvelopeDecoderTest {
     }
 
     @Test
+    fun `decodes a well-formed payment envelope with full payee block`() {
+        val raw = paymentJson()
+        val result = decoderAt("2026-01-01T00:00:00Z").decode(asBase64Url(raw))
+        assertTrue(result is EnvelopeDecodeResult.Success)
+        val envelope = (result as EnvelopeDecodeResult.Success).envelope
+        assertEquals(OperationType.PAYMENT, envelope.type)
+        assertEquals("merchant-uuid-1234", envelope.payee?.merchantId)
+        assertEquals("MediaMarkt Saturn", envelope.payee?.merchantName)
+        assertEquals("Bluetooth headphones", envelope.payee?.description)
+    }
+
+    @Test
+    fun `payment envelope accepts a payee without optional description`() {
+        val raw = paymentJson(payeeDescription = null)
+        val result = decoderAt("2026-01-01T00:00:00Z").decode(asBase64Url(raw))
+        assertTrue(result is EnvelopeDecodeResult.Success)
+        assertEquals(null, (result as EnvelopeDecodeResult.Success).envelope.payee?.description)
+    }
+
+    @Test
+    fun `payment envelope rejects payee with blank merchantId`() {
+        val raw = paymentJson(merchantId = "")
+        val result = decoderAt("2026-01-01T00:00:00Z").decode(asBase64Url(raw))
+        assertEquals(EnvelopeDecodeResult.Failure.Malformed, result)
+    }
+
+    @Test
+    fun `payment envelope rejects payee with blank merchantName`() {
+        val raw = paymentJson(merchantName = "")
+        val result = decoderAt("2026-01-01T00:00:00Z").decode(asBase64Url(raw))
+        assertEquals(EnvelopeDecodeResult.Failure.Malformed, result)
+    }
+
+    @Test
+    fun `payment envelope rejects payee missing merchantId field entirely`() {
+        // The Payee data class requires merchantId; serialization fails closed
+        // when the field is absent.
+        val raw = """
+            {
+              "type": "payment",
+              "amount": 1000,
+              "currency": "EUR",
+              "paymentRef": "11111111-2222-3333-4444-555555555555",
+              "expiry": "2030-01-01T00:00:00Z",
+              "payer": { "iban": "DE89", "holderName": "X" },
+              "payee": { "merchantName": "M", "description": "d" },
+              "bic": "DEMODEAA",
+              "description": "Pay something"
+            }
+        """.trimIndent()
+        val result = decoderAt("2026-01-01T00:00:00Z").decode(asBase64Url(raw))
+        assertEquals(EnvelopeDecodeResult.Failure.Malformed, result)
+    }
+
+    @Test
     fun `rejects malformed base64url`() {
         val result = decoderAt("2026-01-01T00:00:00Z").decode("!!!not base64url!!!")
         assertEquals(EnvelopeDecodeResult.Failure.Malformed, result)
@@ -161,6 +216,31 @@ class EnvelopeDecoderTest {
               "payer": { "iban": "DE89370400440532013000", "holderName": "Mihai Test" },
               "bic": "DEMODEAA"$displayName,
               "description": "Top up €50.00"$extra
+            }
+        """.trimIndent()
+    }
+
+    private fun paymentJson(
+        merchantId: String = "merchant-uuid-1234",
+        merchantName: String = "MediaMarkt Saturn",
+        payeeDescription: String? = "Bluetooth headphones",
+    ): String {
+        val description = payeeDescription?.let { ""","description":"$it"""" } ?: ""
+        return """
+            {
+              "type": "payment",
+              "amount": 2345,
+              "currency": "EUR",
+              "paymentRef": "11111111-2222-3333-4444-555555555555",
+              "expiry": "2030-01-01T00:00:00Z",
+              "payer": { "iban": "DE89370400440532013000", "holderName": "Mihai Test" },
+              "payee": {
+                "merchantId": "$merchantId",
+                "merchantName": "$merchantName"$description
+              },
+              "bic": "DEMODEAA",
+              "bankDisplayName": "Bank A",
+              "description": "Pay MediaMarkt Saturn €23.45"
             }
         """.trimIndent()
     }

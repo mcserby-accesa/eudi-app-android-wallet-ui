@@ -29,11 +29,21 @@ data class Payer(
     val holderName: String,
 )
 
+/**
+ * Merchant block carried in a `type: "payment"` envelope. `merchantId` is the
+ * merchant's NCB userId — opaque to the wallet UI; signed only so the bank
+ * backend can cross-check it at confirm time. `merchantName` is rendered
+ * verbatim on the confirm screen. `description` is the optional human-readable
+ * line of the payment-request — the merchant's typed-in description.
+ *
+ * For `type: "topUp"` and `type: "redeem"` the envelope's `payee` is `null`
+ * and the wallet does not render any payee block.
+ */
 @Serializable
 data class Payee(
-    val iban: String? = null,
-    val holderName: String? = null,
-    val alias: String? = null,
+    val merchantId: String,
+    val merchantName: String,
+    val description: String? = null,
 )
 
 /**
