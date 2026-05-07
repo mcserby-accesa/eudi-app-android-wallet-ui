@@ -37,11 +37,24 @@ data class State(
 
     val appVersion: String = "",
     val changelogUrl: String?,
+
+    /**
+     * Accesa: when true, render the workshop-reset confirmation dialog.
+     * Triggered by a long-press on the version text — a deliberately
+     * non-discoverable affordance that the workshop facilitator uses
+     * between participants.
+     */
+    val showResetDialog: Boolean = false,
 ) : ViewState
 
 sealed class Event : ViewEvent {
     data object Pop : Event()
     data class ItemClicked(val itemType: SettingsMenuItemType) : Event()
+
+    // Accesa: workshop reset
+    data object AppVersionLongPressed : Event()
+    data object ResetConfirmed : Event()
+    data object ResetDismissed : Event()
 }
 
 sealed class Effect : ViewSideEffect {
@@ -52,6 +65,14 @@ sealed class Effect : ViewSideEffect {
     }
 
     data class ShareLogFile(val intent: Intent, val chooserTitle: String) : Effect()
+
+    /**
+     * Accesa: signal the screen to wipe all app data via
+     * `ActivityManager.clearApplicationUserData()`. The OS kills the process
+     * after the call returns, so there is no follow-up navigation — the next
+     * launcher tap starts a fresh install.
+     */
+    data object ClearApplicationData : Effect()
 }
 
 @KoinViewModel
@@ -75,6 +96,15 @@ class SettingsViewModel(
             is Event.Pop -> setEffect { Effect.Navigation.Pop }
 
             is Event.ItemClicked -> handleSettingsMenuItemClicked(event.itemType)
+
+            is Event.AppVersionLongPressed -> setState { copy(showResetDialog = true) }
+
+            is Event.ResetDismissed -> setState { copy(showResetDialog = false) }
+
+            is Event.ResetConfirmed -> {
+                setState { copy(showResetDialog = false) }
+                setEffect { Effect.ClearApplicationData }
+            }
         }
     }
 

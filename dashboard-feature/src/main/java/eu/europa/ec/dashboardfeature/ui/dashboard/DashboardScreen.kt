@@ -22,18 +22,28 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -93,13 +103,19 @@ internal fun DashboardScreen(
     Scaffold(
         bottomBar = { BottomNavigationBar(bottomNavigationController) }
     ) { padding ->
-        NavHost(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(bottom = padding.calculateBottomPadding()),
-            navController = bottomNavigationController,
-            startDestination = BottomNavigationItem.Home.route
+                .padding(bottom = padding.calculateBottomPadding())
         ) {
+            // Accesa: persistent demo banner across all bottom-nav tabs.
+            DemoBanner()
+
+            NavHost(
+                modifier = Modifier.fillMaxSize(),
+                navController = bottomNavigationController,
+                startDestination = BottomNavigationItem.Home.route
+            ) {
             composable(BottomNavigationItem.Home.route) {
                 HomeScreen(
                     hostNavController,
@@ -126,6 +142,7 @@ internal fun DashboardScreen(
                         viewModel.setEvent(event)
                     }
                 )
+            }
             }
         }
 
@@ -277,5 +294,31 @@ private fun DashboardSheetContent(
                 onEventSent = onEventSent,
             )
         }
+    }
+}
+
+/**
+ * Accesa: persistent demo banner shown across all bottom-nav tabs of the
+ * dashboard. Signals to workshop participants that this is the Accesa fork's
+ * demo build, distinguishing it from a production EUDI wallet. The wallet
+ * does not hold money — its job is identity + signing — so the copy is the
+ * organization-level mark, not a "DEMO — not real money" warning.
+ */
+@Composable
+private fun DemoBanner() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.tertiaryContainer)
+            .padding(vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "ACCESA DEMO",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onTertiaryContainer,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.5.sp,
+        )
     }
 }

@@ -16,7 +16,10 @@
 
 package eu.europa.ec.dashboardfeature.ui.settings
 
+import android.app.ActivityManager
 import android.content.Context
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,13 +27,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -129,14 +135,30 @@ private fun Content(
             )
         }
 
+        // Accesa: long-press the version text to open the workshop-reset
+        // dialog. Tap is a no-op (no ripple) — the affordance is intentionally
+        // non-discoverable so casual users don't trigger it.
         Text(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = SPACING_MEDIUM.dp),
+                .padding(top = SPACING_MEDIUM.dp)
+                .combinedClickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                    onLongClick = { onEventSend(Event.AppVersionLongPressed) },
+                ),
             text = state.appVersion,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center
+        )
+    }
+
+    if (state.showResetDialog) {
+        ResetWalletDialog(
+            onConfirm = { onEventSend(Event.ResetConfirmed) },
+            onDismiss = { onEventSend(Event.ResetDismissed) },
         )
     }
 
@@ -150,9 +172,49 @@ private fun Content(
                         effect.chooserTitle
                     )
                 }
+                is Effect.ClearApplicationData -> {
+                    // Wipes all app data (prefs, db, files, Keystore key bindings)
+                    // and kills the process. Next launcher tap starts a fresh
+                    // install. The OS handles the re-init — no follow-up
+                    // navigation needed.
+                    val activityManager = context
+                        .getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+                    activityManager.clearApplicationUserData()
+                }
             }
         }.collect()
     }
+}
+
+/**
+ * Accesa: workshop-reset confirmation. Shown when the facilitator long-presses
+ * the version text. Confirm wipes all wallet data via
+ * `ActivityManager.clearApplicationUserData()` and kills the process; the next
+ * launcher tap starts the wallet from scratch (back to QR-config).
+ */
+@Composable
+private fun ResetWalletDialog(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reset wallet?") },
+        text = {
+            Text(
+                "This deletes the held PID, the device key, and all wallet " +
+                    "settings. The wallet will close and restart fresh on " +
+                    "next launch. Use this to hand the device to the next " +
+                    "workshop participant.",
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text("Reset") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
 }
 
 @Composable
