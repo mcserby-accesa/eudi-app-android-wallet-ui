@@ -69,14 +69,26 @@ jobs:
 
       - name: Resolve release notes
         id: notes
+        env:
+          # Pass the (potentially multi-line) commit message + workflow
+          # input through env vars rather than YAML template literals.
+          # Substituting ${{ github.event.head_commit.message }} directly
+          # into bash breaks shell quoting when the message has newlines.
+          INPUT_NOTES: ${{ inputs.release_notes }}
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           set -euo pipefail
-          if [[ -n "${{ inputs.release_notes }}" ]]; then
-            notes="${{ inputs.release_notes }}"
+          if [[ -n "${INPUT_NOTES}" ]]; then
+            notes="${INPUT_NOTES}"
           else
-            notes="${{ github.event.head_commit.message }} (${GITHUB_SHA::7})"
+            notes="${HEAD_MESSAGE} (${GITHUB_SHA::7})"
           fi
-          # Limit to ~1KB and escape newlines for Gradle property safety.
+          # Single-line, ~1KB, stripped of chars that would break the
+          # Gradle -PfirebaseReleaseNotes value passed downstream.
+          notes="${notes//$'\n'/ }"
+          notes="${notes//$'\r'/}"
+          notes="${notes//\"/}"
+          notes="${notes//\`/}"
           notes="${notes:0:1000}"
           echo "value=${notes}" >> "${GITHUB_OUTPUT}"
 
