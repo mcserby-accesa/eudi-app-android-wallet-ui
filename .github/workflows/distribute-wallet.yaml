@@ -1,0 +1,103 @@
+name: Distribute Wallet
+
+# Builds the demo/release APK and uploads it to Firebase App Distribution.
+# Mirrors the bank-app workflow in the companion repo
+# (instant-payments-initiative/.github/workflows/distribute-bank-app.yaml).
+#
+# Triggered by:
+#   - any push to accesa-de (the Accesa-work integration branch — `main`
+#     in this repo is reserved for clean upstream sync, never distributed)
+#   - manual workflow_dispatch (with optional release-notes override)
+#
+# The wallet has two flavors (`dev`, `demo`); only `demo` is wired to
+# Firebase App Distribution — see app/build.gradle.kts. The runtime PID
+# issuer URL is set per-workshop via the in-app QR-config screen, so the
+# same APK works against any backend (sslip.io cluster, tailnet, etc).
+
+on:
+  push:
+    branches: [accesa-de]
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "Release notes shown to testers"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  distribute:
+    name: Build + distribute (demoRelease)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.WALLET_KEYSTORE_B64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${KEYSTORE_B64}" ]]; then
+            echo "::error::WALLET_KEYSTORE_B64 is not set; can't sign release APKs."
+            exit 1
+          fi
+          echo "${KEYSTORE_B64}" | base64 -d > "${RUNNER_TEMP}/wallet.jks"
+          echo "KEYSTORE_FILE=${RUNNER_TEMP}/wallet.jks" >> "${GITHUB_ENV}"
+
+      - name: Decode Firebase service account
+        env:
+          SA_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SA_JSON}" ]]; then
+            echo "::error::FIREBASE_SERVICE_ACCOUNT_JSON is not set; can't upload to App Distribution."
+            exit 1
+          fi
+          printf '%s' "${SA_JSON}" > "${RUNNER_TEMP}/firebase-service-account.json"
+          echo "FIREBASE_SA_FILE=${RUNNER_TEMP}/firebase-service-account.json" >> "${GITHUB_ENV}"
+
+      - name: Resolve release notes
+        id: notes
+        run: |
+          set -euo pipefail
+          if [[ -n "${{ inputs.release_notes }}" ]]; then
+            notes="${{ inputs.release_notes }}"
+          else
+            notes="${{ github.event.head_commit.message }} (${GITHUB_SHA::7})"
+          fi
+          # Limit to ~1KB and escape newlines for Gradle property safety.
+          notes="${notes:0:1000}"
+          echo "value=${notes}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build + upload
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.WALLET_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.WALLET_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.WALLET_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Firebase App ID is committed as default in app/build.gradle.kts;
+          # no secret to inject here. Override with -PfirebaseWalletAppId
+          # if targeting a different Firebase project.
+          ./gradlew \
+            :app:assembleDemoRelease \
+            :app:appDistributionUploadDemoRelease \
+            --no-daemon \
+            -PwalletKeystoreFile="${KEYSTORE_FILE}" \
+            -PwalletKeystorePassword="${KEYSTORE_PASSWORD}" \
+            -PwalletKeyAlias="${KEY_ALIAS}" \
+            -PwalletKeyPassword="${KEY_PASSWORD}" \
+            -PfirebaseServiceAccount="${FIREBASE_SA_FILE}" \
+            -PfirebaseTesterGroups="workshop" \
+            -PfirebaseReleaseNotes="${{ steps.notes.outputs.value }}"

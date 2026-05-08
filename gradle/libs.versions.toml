@@ -30,6 +30,7 @@ androidxAppAuth = "1.0.0"
 coil = "3.4.0"
 constraintlayoutVersion = "1.1.1"
 dependencyGraphPlugin = "0.13.0"
+firebaseAppDistribution = "5.2.1"
 gmsPlugin = "4.4.4"
 junit4 = "4.13.2"
 kotlin = "2.3.21"
@@ -178,6 +179,7 @@ android-application = { id = "com.android.application", version.ref = "androidGr
 android-library = { id = "com.android.library", version.ref = "androidGradlePlugin" }
 android-test = { id = "com.android.test", version.ref = "androidGradlePlugin" }
 dependencyGraph = { id = "dev.iurysouza.modulegraph", version.ref = "dependencyGraphPlugin"}
+firebase-appdistribution = { id = "com.google.firebase.appdistribution", version.ref = "firebaseAppDistribution" }
 gms = { id = "com.google.gms.google-services", version.ref = "gmsPlugin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }

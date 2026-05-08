@@ -88,6 +88,43 @@ The upstream repo's [README](README.md) carries an EUPL 1.2 licence and a "refer
 
 Manual checklist for verifying wallet + bank-app + backends together: [`wiki/m1_smoke_test.md`](wiki/m1_smoke_test.md). Run it after any change to the intent surface (`AUTHORIZE_OPERATION` envelope, signing, callback wiring) and before every demo.
 
+## Workshop distribution (Firebase App Distribution)
+
+Pushes to `accesa-de` build `:app:assembleDemoRelease` and upload it to the shared `digital-euro` Firebase project (App ID `1:147830702926:android:553e4246ba5a05c208141f`, package `eu.europa.ec.euidi`, group `workshop`). Bank-app A and Bank-app B distribute from the companion repo into the same project — three apps, three invite QR codes on the workshop slide.
+
+| | |
+|---|---|
+| Workflow | [`.github/workflows/distribute-wallet.yaml`](.github/workflows/distribute-wallet.yaml) |
+| Variant | `demoRelease` only — `dev` flavor stays local-only |
+| Trigger | Every push to `accesa-de` + manual `workflow_dispatch` |
+| Plugin wiring | `app/build.gradle.kts` — `firebaseAppDistribution { ... }` block scoped to `productFlavors.demo`; `workshop` signing config registered when CI passes `-PwalletKeystoreFile` |
+| Companion-repo guide | [`plan/workshop/wallet-distribution-setup.md`](https://github.com/mcserby-accesa/instant-payments-initiative/blob/main/plan/workshop/wallet-distribution-setup.md) — full bootstrapping (console registration, tester group, secrets) |
+
+Required GitHub repo secrets (provision under Settings → Secrets and variables → Actions):
+
+| Secret | Source |
+|---|---|
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | Same JSON as the bank-app repo — one service account, project-wide upload permission |
+| `WALLET_KEYSTORE_B64` | `base64 -i wallet.jks` — reuse the bank-app's `digital-euro.jks` is fine for workshops |
+| `WALLET_KEYSTORE_PASSWORD` | from `keytool` |
+| `WALLET_KEY_ALIAS` | e.g. `wallet` |
+| `WALLET_KEY_PASSWORD` | from `keytool` |
+
+Override knobs (CI or local):
+
+```sh
+# Targeting a different Firebase project (rare):
+./gradlew :app:assembleDemoRelease :app:appDistributionUploadDemoRelease \
+    -PfirebaseWalletAppId=1:OTHER:android:... \
+    -PfirebaseServiceAccount=/path/to/sa.json \
+    -PwalletKeystoreFile=/path/to/wallet.jks \
+    -PwalletKeystorePassword=... \
+    -PwalletKeyAlias=wallet \
+    -PwalletKeyPassword=...
+```
+
+Local `:app:assembleDemoRelease` without these properties falls back to upstream's env-var-based `release` signing config — fine for build verification, but won't upload.
+
 ## Wallet ⇄ App API — `eudi-openid4vp://` (PRESENT_PID)
 
 The **`PRESENT_PID`** primitive of the wallet ⇄ app contract (companion repo `specs/protocols/de-wallet-app-api.md`) reuses the upstream `eudi-openid4vp://` deep link **without any Accesa-specific code**. Verified by tracing the upstream pathway end-to-end:

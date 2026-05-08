@@ -14,6 +14,7 @@
  * governing permissions and limitations under the Licence.
  */
 
+import com.google.firebase.appdistribution.gradle.firebaseAppDistribution
 import project.convention.logic.AppBuildType
 import project.convention.logic.config.LibraryModule
 import project.convention.logic.getProperty
@@ -21,6 +22,7 @@ import project.convention.logic.getProperty
 plugins {
     id("project.android.application")
     id("project.android.application.compose")
+    alias(libs.plugins.firebase.appdistribution)
 }
 
 android {
@@ -36,6 +38,27 @@ android {
                 getProperty("androidKeyPassword") ?: System.getenv("ANDROID_KEY_PASSWORD")
 
             enableV2Signing = true
+        }
+
+        // Accesa: workshop (Firebase App Distribution) signing config. Reads
+        // from Gradle properties so CI can sign with a stable keystore secret
+        // without committing keys. Only registered when -PwalletKeystoreFile
+        // is passed; locally absent so upstream's `release` config still
+        // resolves for non-CI use. GitHub Actions decodes WALLET_KEYSTORE_B64
+        // to a file and passes:
+        //   -PwalletKeystoreFile=$RUNNER_TEMP/wallet.jks
+        //   -PwalletKeystorePassword=$WALLET_KEYSTORE_PASSWORD
+        //   -PwalletKeyAlias=$WALLET_KEY_ALIAS
+        //   -PwalletKeyPassword=$WALLET_KEY_PASSWORD
+        val walletKeystoreFile = project.findProperty("walletKeystoreFile") as String?
+        if (walletKeystoreFile != null) {
+            create("workshop") {
+                storeFile = file(walletKeystoreFile)
+                storePassword = (project.findProperty("walletKeystorePassword") as String?) ?: ""
+                keyAlias = (project.findProperty("walletKeyAlias") as String?) ?: ""
+                keyPassword = (project.findProperty("walletKeyPassword") as String?) ?: ""
+                enableV2Signing = true
+            }
         }
     }
 
@@ -59,11 +82,43 @@ android {
             isDebuggable = false
             isMinifyEnabled = true
             applicationIdSuffix = AppBuildType.RELEASE.applicationIdSuffix
-            signingConfig = signingConfigs.getByName("release")
+            // Prefer the CI-provisioned `workshop` config when present; fall
+            // back to upstream's env-var-based `release` config otherwise.
+            signingConfig = signingConfigs.findByName("workshop")
+                ?: signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+    }
+
+    // Accesa: Firebase App Distribution wiring for the workshop demo build.
+    // Scoped to the `demo` flavor's release variant — `dev` is the local-dev
+    // flavor and isn't distributed. App ID is committed (it's a public
+    // identifier, visible to anyone with the APK) so CI doesn't need to
+    // inject it as a secret. Override via -PfirebaseWalletAppId when targeting
+    // a different Firebase project. See plan/workshop/wallet-distribution-setup.md
+    // in the companion repo for the full pipeline.
+    val firebaseWalletAppId: String =
+        (project.findProperty("firebaseWalletAppId") as String?)
+            ?: "1:147830702926:android:553e4246ba5a05c208141f"
+    val firebaseServiceAccount: String? =
+        project.findProperty("firebaseServiceAccount") as String?
+    val firebaseTesterGroups: String =
+        (project.findProperty("firebaseTesterGroups") as String?) ?: "workshop"
+    val firebaseReleaseNotes: String =
+        (project.findProperty("firebaseReleaseNotes") as String?)
+            ?: "Workshop demo build"
+
+    productFlavors {
+        getByName("demo") {
+            firebaseAppDistribution {
+                appId = firebaseWalletAppId
+                serviceCredentialsFile = firebaseServiceAccount.orEmpty()
+                groups = firebaseTesterGroups
+                releaseNotes = firebaseReleaseNotes
+            }
         }
     }
 
