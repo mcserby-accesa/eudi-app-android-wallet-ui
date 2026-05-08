@@ -97,6 +97,11 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.WALLET_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.WALLET_KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.WALLET_KEY_PASSWORD }}
+          # Forward the resolved release notes through an env var (not a
+          # YAML template literal in the command) so commit messages
+          # containing ${{...}}, backticks, or other shell metacharacters
+          # don't break the bash script when inlined.
+          RELEASE_NOTES: ${{ steps.notes.outputs.value }}
         run: |
           set -euo pipefail
           # Firebase App ID is committed as default in app/build.gradle.kts;
@@ -112,4 +117,4 @@ jobs:
             -PwalletKeyPassword="${KEY_PASSWORD}" \
             -PfirebaseServiceAccount="${FIREBASE_SA_FILE}" \
             -PfirebaseTesterGroups="workshop" \
-            -PfirebaseReleaseNotes="${{ steps.notes.outputs.value }}"
+            -PfirebaseReleaseNotes="${RELEASE_NOTES}"
