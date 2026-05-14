@@ -83,7 +83,16 @@ internal class WalletCoreConfigImpl(
                         R.raw.pidissuerca02_pt,
                         R.raw.pidissuerca02_ut,
                         R.raw.dc4eu,
-                        R.raw.r45_staging
+                        R.raw.r45_staging,
+                        // Accesa: workshop CA used by bank-simulator to sign OID4VP
+                        // request JWTs (x509_san_dns scheme). The CA cert lives in
+                        // the companion repo at
+                        // services/bank-simulator/src/main/resources/workshop-ca/cert.pem
+                        // and is bundled here so the wallet trusts request signatures
+                        // from any bank-* host issued by this CA. Workshop-only —
+                        // remove (or replace with a real per-deployment CA) for any
+                        // non-demo build.
+                        R.raw.accesa_workshop_ca
                     )
                 }
             }
