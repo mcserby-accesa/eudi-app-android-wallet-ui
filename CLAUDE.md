@@ -11,8 +11,8 @@ Key implications:
 - Topic branches go `accesa-de/<feature>` and PR back into `accesa-de`.
 - **Specs are owned by the companion repo** at `C:\Users\mihai.serban\IdeaProjects\instant-payments-initiative` under `specs/`. Particularly authoritative for this repo: `specs/components/mobile-wallet.md` (M1 scope), `specs/protocols/de-wallet-app-api.md` (PRESENT_PID + AUTHORIZE_OPERATION intent contract), and the relevant ADRs in `plan/decisions/`. The wallet here is the *implementation*; the spec repo is the *authority*. Do not modify specs in this repo — flag any contract question to the user so it can be made spec-side first.
 - The wallet does NOT call any bank backend directly. It receives `Intent.ACTION_VIEW` from bank apps and replies via callback URIs. The only HTTP backend the wallet contacts is the **PID issuer** during initial OID4VCI issuance.
-- New Accesa-specific Gradle modules should be named `de-feature/*` or `de-logic/*` so they are visually distinct from upstream `*-feature` / `*-logic` modules. (None exist yet at fork time — M1 will introduce them.)
-- Run `./gradlew spotlessApply` before committing on `accesa-de` so PR diffs against upstream stay clean.
+- New Accesa-specific Gradle modules are named `de-feature/`, `de-logic/`, or (from M4a) `de-storage/` so they are visually distinct from upstream `*-feature` / `*-logic` modules. `de-logic` + `de-feature` already exist (M1); `de-storage` lands with M4a.
+- Upstream does not configure Spotless or ktlint as Gradle tasks (verified — no `spotlessApply` task exists). Format new code via Android Studio's built-in Kotlin formatter before committing so diffs against upstream stay clean. See `FORK.md` §"Conventions inherited from upstream" for the full reasoning.
 
 ## Build & run
 
@@ -49,8 +49,9 @@ The app is a **multi-module Android Gradle project** with a strict layered depen
 
 - `app` is a thin shell — it only depends on `assembly-logic` plus the baseline-profile.
 - `assembly-logic` is the composition root: it pulls in every `*-feature` module and wires Koin DI graph (`assembly-logic/src/main/java/eu/europa/ec/assemblylogic/di/AssemblyModule.kt`). The Android `Application` class lives here (`Application.kt`) — it sets up Koin, the RQES SDK, analytics, and periodic `WorkManager` jobs (revocation, re-issuance).
-- **`*-feature` modules** (`startup-feature`, `dashboard-feature`, `presentation-feature`, `proximity-feature`, `issuance-feature`, `common-feature`) own user-facing screens. They depend on `common-feature` plus the `*-logic` modules they need.
-- **`*-logic` modules** (`business-logic`, `core-logic`, `network-logic`, `storage-logic`, `ui-logic`, `authentication-logic`, `analytics-logic`, `resources-logic`) own cross-cutting concerns. `core-logic` wraps the EUDI Wallet core SDK; `ui-logic` holds the design system + MVI plumbing; `resources-logic` holds strings, drawables, and trust-store certificates.
+- **`*-feature` modules** (`startup-feature`, `dashboard-feature`, `presentation-feature`, `proximity-feature`, `issuance-feature`, `common-feature`, and the Accesa **`de-feature`**) own user-facing screens. They depend on `common-feature` plus the `*-logic` modules they need.
+- **`*-logic` modules** (`business-logic`, `core-logic`, `network-logic`, `storage-logic`, `ui-logic`, `authentication-logic`, `analytics-logic`, `resources-logic`, and the Accesa **`de-logic`**) own cross-cutting concerns. `core-logic` wraps the EUDI Wallet core SDK; `ui-logic` holds the design system + MVI plumbing; `resources-logic` holds strings, drawables, and trust-store certificates; `de-logic` owns the DE envelope wire format + AUTHORIZE_OPERATION JWT builder.
+- The Accesa **`de-storage`** module (added in M4a) encapsulates the simulated Secure Element for offline DE tokens — token storage, holderPub keypair generation, `txCounter`. Treated like a real SE: no callers outside `de-feature` reach in.
 - **`build-logic/convention`** holds the Gradle convention plugins (`project.android.application`, `project.android.feature`, `project.android.koin`, `project.wallet.core`, etc.). New modules apply these plugins instead of duplicating `android { ... }` boilerplate. See `build-logic/convention/build.gradle.kts` for the plugin registry and `build-logic/convention/src/main/kotlin/project/convention/logic/AppFlavor.kt` for the `dev`/`demo` flavor definitions.
 
 ### Per-screen pattern

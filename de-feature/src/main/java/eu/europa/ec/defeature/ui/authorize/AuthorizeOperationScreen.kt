@@ -100,14 +100,14 @@ private fun Content(
             contentAlignment = Alignment.Center,
         ) {
             when (state) {
-                is State.ReadyToConfirm -> ConfirmBody(
+                is State.ReadyToConfirm -> RouteConfirmBody(
                     envelope = state.envelope,
                     enabled = true,
                     onCancel = onCancel,
                     onConfirm = onConfirm,
                 )
 
-                is State.Signing -> ConfirmBody(
+                is State.Signing -> RouteConfirmBody(
                     envelope = state.envelope,
                     enabled = false,
                     onCancel = onCancel,
@@ -121,6 +121,38 @@ private fun Content(
 
     LaunchedEffect(Unit) {
         effectFlow.onEach(onEffect).collect()
+    }
+}
+
+/**
+ * Dispatches to the per-`OperationType` confirm layout. `withdrawToWallet`
+ * gets a distinct layout (big amount + bank line + disclaimer + simulated-SE
+ * label, per `mobile-wallet.md` §M4a Confirm-screen render branch); every
+ * other type renders via the original [ConfirmBody].
+ */
+@Composable
+private fun RouteConfirmBody(
+    envelope: OperationEnvelope,
+    enabled: Boolean,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    when (envelope.type) {
+        OperationType.WITHDRAW_TO_WALLET -> WithdrawConfirmBody(
+            envelope = envelope,
+            enabled = enabled,
+            onCancel = onCancel,
+            onConfirm = onConfirm,
+        )
+
+        OperationType.TOP_UP,
+        OperationType.REDEEM,
+        OperationType.PAYMENT -> ConfirmBody(
+            envelope = envelope,
+            enabled = enabled,
+            onCancel = onCancel,
+            onConfirm = onConfirm,
+        )
     }
 }
 
@@ -147,12 +179,13 @@ private fun ConfirmBody(
         // signed JWT carries the full envelope verbatim.
         when (envelope.type) {
             OperationType.PAYMENT -> envelope.payee?.let { PaymentPrimary(it) }
-            OperationType.TOP_UP,
-            OperationType.REDEEM,
-            OperationType.WITHDRAW_TO_WALLET -> Text(
+            OperationType.TOP_UP, OperationType.REDEEM -> Text(
                 text = envelope.description,
                 style = MaterialTheme.typography.bodyLarge,
             )
+            // withdrawToWallet renders via [WithdrawConfirmBody] — RouteConfirmBody
+            // dispatches before this composable is ever called.
+            OperationType.WITHDRAW_TO_WALLET -> Unit
         }
 
         Spacer(Modifier.height(8.dp))
@@ -189,6 +222,105 @@ private fun ConfirmBody(
                 ) { Text("Confirm") }
             }
         }
+    }
+}
+
+/**
+ * Confirm-screen render branch for `type: "withdrawToWallet"`, per
+ * `mobile-wallet.md` §M4a Confirm-screen render branch:
+ *
+ *     ┌────────────────────────────────────────┐
+ *     │   Withdraw onto this device            │
+ *     │   €25.00                                │
+ *     │   From your account at Bank A           │
+ *     │   <envelope.description verbatim>       │
+ *     │   ⓘ This will reduce your online …      │
+ *     │   [ Cancel ]            [ Confirm 👆 ]  │
+ *     │   Simulated SE — workshop demo …        │
+ *     └────────────────────────────────────────┘
+ *
+ * The disclaimer line and the "Simulated SE — workshop demo. Not a real
+ * Secure Element." label are non-negotiable per the M4a handoff: anywhere
+ * the simulated SE is the trust anchor must be labelled as such.
+ *
+ * Same privacy rule as every other branch: `payer.iban` and
+ * `payer.holderName` are NEVER displayed even though the signed JWT
+ * carries the full envelope verbatim.
+ */
+@Composable
+private fun WithdrawConfirmBody(
+    envelope: OperationEnvelope,
+    enabled: Boolean,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = titleFor(envelope.type),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+
+        Text(
+            text = formatAmount(envelope.amount, envelope.currency),
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+        )
+
+        Text(
+            text = "From your account at ${envelope.bankDisplayName ?: envelope.bic}",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Text(
+            text = envelope.description,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+
+        Text(
+            text = "ⓘ This will reduce your online balance by the same amount.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        if (!enabled) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 12.dp),
+                ) { Text("Cancel") }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 12.dp),
+                ) { Text("Confirm") }
+            }
+        }
+
+        Text(
+            text = "Simulated SE — workshop demo. Not a real Secure Element.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 

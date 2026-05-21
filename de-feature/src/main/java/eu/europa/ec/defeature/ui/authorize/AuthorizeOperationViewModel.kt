@@ -23,6 +23,7 @@ import eu.europa.ec.commonfeature.interactor.DeviceAuthenticationInteractor
 import eu.europa.ec.delogic.envelope.EnvelopeDecodeResult
 import eu.europa.ec.delogic.envelope.EnvelopeDecoder
 import eu.europa.ec.delogic.envelope.OperationEnvelope
+import eu.europa.ec.delogic.envelope.OperationType
 import eu.europa.ec.delogic.jwt.AuthorizationJwtBuilder
 import eu.europa.ec.uilogic.mvi.MviViewModel
 import eu.europa.ec.uilogic.mvi.ViewEvent
@@ -38,6 +39,14 @@ internal object AuthorizeErrorCode {
     const val EXPIRED = "expired"
     const val USER_CANCELLED = "user_cancelled"
     const val WALLET_NOT_PROVISIONED = "wallet_not_provisioned"
+
+    /**
+     * Transient placeholder returned by the withdrawToWallet confirm action
+     * until slice 4 wires the direct-POST `/deliver` flow. NOT part of the
+     * spec's defined error vocabulary — remove this constant + its branch
+     * in [AuthorizeOperationViewModel] once token delivery is implemented.
+     */
+    const val WITHDRAW_NOT_IMPLEMENTED = "withdraw_not_implemented"
 }
 
 sealed interface State : ViewState {
@@ -130,6 +139,18 @@ class AuthorizeOperationViewModel(
 
             is Event.Confirm -> {
                 val s = viewState.value as? State.ReadyToConfirm ?: return
+                // withdrawToWallet must NOT return the JWT via the callback URI
+                // — per spec §withdrawToWallet, the wallet POSTs directly to
+                // `deliveryUrl`. Slice 4 wires that path; slice 2 short-circuits
+                // with a transient error so the bank-app gets a clean response.
+                if (s.envelope.type == OperationType.WITHDRAW_TO_WALLET) {
+                    fireFailureAndFinish(
+                        callback = s.callback,
+                        callbackState = s.state,
+                        errorCode = AuthorizeErrorCode.WITHDRAW_NOT_IMPLEMENTED,
+                    )
+                    return
+                }
                 setState {
                     State.Signing(envelope = s.envelope, state = s.state, callback = s.callback)
                 }
