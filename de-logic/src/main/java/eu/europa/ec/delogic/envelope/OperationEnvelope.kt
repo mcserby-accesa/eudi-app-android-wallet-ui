@@ -10,6 +10,7 @@ package eu.europa.ec.delogic.envelope
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 enum class OperationType {
@@ -21,6 +22,9 @@ enum class OperationType {
 
     @SerialName("payment")
     PAYMENT,
+
+    @SerialName("withdrawToWallet")
+    WITHDRAW_TO_WALLET,
 }
 
 @Serializable
@@ -67,4 +71,18 @@ data class OperationEnvelope(
     val bic: String,
     val bankDisplayName: String? = null,
     val description: String,
+    /**
+     * `true` on the inbound envelope when `type == WITHDRAW_TO_WALLET` — the bank
+     * app is telling the wallet to mint a fresh `holderPub` and embed it before
+     * signing (`specs/protocols/de-wallet-app-api.md` §withdrawToWallet). Absent
+     * for every other operation type.
+     */
+    val holderPubRequest: Boolean? = null,
+    /**
+     * Always `null` on the inbound envelope — the wallet sets this to the freshly
+     * generated EC P-256 JWK at sign time, before passing the envelope to the
+     * authorisation-JWT builder. The bank backend cross-checks `envelope.holderPub`
+     * against the request body's `holderPub` field at `/deliver` verification time.
+     */
+    val holderPub: JsonObject? = null,
 )

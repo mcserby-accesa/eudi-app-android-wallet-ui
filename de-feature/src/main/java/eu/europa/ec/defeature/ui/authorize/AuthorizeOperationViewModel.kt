@@ -79,6 +79,12 @@ class AuthorizeOperationViewModel(
     @InjectedParam private val envelopeArg: String,
     @InjectedParam private val stateArg: String,
     @InjectedParam private val callbackArg: String,
+    // `withdrawToWallet`-only: target URL the wallet POSTs the signed
+    // authorisation + holderPub to after biometric confirm, and the single-use
+    // bearer it sets on that POST. Empty strings for every other operation type.
+    // Slice 1 just plumbs them through; consumed in slice 4.
+    @InjectedParam private val deliveryUrlArg: String,
+    @InjectedParam private val deliveryTokenArg: String,
     private val envelopeDecoder: EnvelopeDecoder,
     private val authorizationJwtBuilder: AuthorizationJwtBuilder,
     private val pidCredentialSigner: PidCredentialSigner,

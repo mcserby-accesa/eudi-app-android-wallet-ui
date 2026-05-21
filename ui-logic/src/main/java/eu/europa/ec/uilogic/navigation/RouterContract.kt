@@ -119,14 +119,20 @@ sealed class DeScreens {
     /**
      * Confirmation screen for an `AUTHORIZE_OPERATION` intent. Receives the URI
      * query parameters from the bank app's `eudi-de-authorize://?…` deep link:
-     *  - `envelope` — base64url-encoded operation envelope (signed back verbatim).
-     *  - `state`    — opaque correlation token returned to the bank app verbatim.
-     *  - `callback` — bank-app callback URI; the wallet fires `Intent.ACTION_VIEW`
+     *  - `envelope`      — base64url-encoded operation envelope (signed verbatim).
+     *  - `state`         — opaque correlation token returned to the bank app verbatim.
+     *  - `callback`      — bank-app callback URI; the wallet fires `Intent.ACTION_VIEW`
      *    on it with `?state=<state>&authorization=<JWT>` (or `&error=<code>`).
+     *  - `deliveryUrl`   — only set when `envelope.type == "withdrawToWallet"`;
+     *    HTTPS endpoint the wallet POSTs the signed authorisation + holderPub to
+     *    after biometric confirm. Empty string for every other operation type.
+     *  - `deliveryToken` — opaque single-use bearer credential the wallet sets on
+     *    the `Authorization` header of that POST. Empty string otherwise.
      */
     data object AuthorizeOperation : Screen(
         name = "DE_AUTHORIZE_OPERATION",
-        parameters = "?envelope={envelope}&state={state}&callback={callback}"
+        parameters = "?envelope={envelope}&state={state}&callback={callback}" +
+            "&deliveryUrl={deliveryUrl}&deliveryToken={deliveryToken}"
     )
 }
 

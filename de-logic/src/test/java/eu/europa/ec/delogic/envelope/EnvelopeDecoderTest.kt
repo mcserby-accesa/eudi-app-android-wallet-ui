@@ -126,6 +126,38 @@ class EnvelopeDecoderTest {
     }
 
     @Test
+    fun `decodes a well-formed withdrawToWallet envelope`() {
+        val raw = withdrawJson()
+        val result = decoderAt("2026-01-01T00:00:00Z").decode(asBase64Url(raw))
+        assertTrue(result is EnvelopeDecodeResult.Success)
+        val envelope = (result as EnvelopeDecodeResult.Success).envelope
+        assertEquals(OperationType.WITHDRAW_TO_WALLET, envelope.type)
+        assertEquals(true, envelope.holderPubRequest)
+        // The wallet — not the bank-app — is the source of truth for holderPub.
+        // On the inbound envelope the field MUST be null; the wallet fills it
+        // in before signing.
+        assertEquals(null, envelope.holderPub)
+    }
+
+    @Test
+    fun `withdrawToWallet envelope requires holderPubRequest = true`() {
+        val raw = withdrawJson(holderPubRequest = false)
+        val result = decoderAt("2026-01-01T00:00:00Z").decode(asBase64Url(raw))
+        assertEquals(EnvelopeDecodeResult.Failure.Malformed, result)
+    }
+
+    @Test
+    fun `withdrawToWallet envelope rejects bank-app supplied holderPub`() {
+        // The wallet is the only legitimate source of `holderPub`. A bank-app
+        // sending one in the inbound envelope is either confused or hostile —
+        // either way fail closed so the user is not asked to authorise a key
+        // they did not generate.
+        val raw = withdrawJson(extraField = ""","holderPub": { "kty":"EC","crv":"P-256","x":"a","y":"b" }""")
+        val result = decoderAt("2026-01-01T00:00:00Z").decode(asBase64Url(raw))
+        assertEquals(EnvelopeDecodeResult.Failure.Malformed, result)
+    }
+
+    @Test
     fun `rejects malformed base64url`() {
         val result = decoderAt("2026-01-01T00:00:00Z").decode("!!!not base64url!!!")
         assertEquals(EnvelopeDecodeResult.Failure.Malformed, result)
@@ -219,6 +251,24 @@ class EnvelopeDecoderTest {
             }
         """.trimIndent()
     }
+
+    private fun withdrawJson(
+        holderPubRequest: Boolean = true,
+        extraField: String = "",
+    ): String = """
+        {
+          "type": "withdrawToWallet",
+          "amount": 2500,
+          "currency": "EUR",
+          "paymentRef": "11111111-2222-3333-4444-555555555555",
+          "expiry": "2030-01-01T00:00:00Z",
+          "payer": { "iban": "DE89370400440532013000", "holderName": "Mihai Test" },
+          "bic": "DEMODEAA",
+          "bankDisplayName": "Bank A",
+          "description": "Withdraw €25.00 from your account onto this device",
+          "holderPubRequest": $holderPubRequest$extraField
+        }
+    """.trimIndent()
 
     private fun paymentJson(
         merchantId: String = "merchant-uuid-1234",

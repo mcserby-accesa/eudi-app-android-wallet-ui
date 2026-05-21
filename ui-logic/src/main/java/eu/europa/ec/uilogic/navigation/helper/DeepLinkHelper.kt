@@ -118,7 +118,9 @@ fun handleDeepLinkAction(
 
         // Accesa: route bank-app AUTHORIZE_OPERATION deep links to the de-feature
         // confirmation screen, carrying the URI's `envelope`, `state`, and
-        // `callback` query params verbatim. The screen handles malformed input.
+        // `callback` query params verbatim. `deliveryUrl` and `deliveryToken` are
+        // only set when envelope.type == "withdrawToWallet" — empty strings for
+        // every other operation type. The screen handles malformed input.
         DeepLinkType.DE_AUTHORIZE -> {
             val deAuthorizeLink = generateComposableNavigationLink(
                 screen = DeScreens.AuthorizeOperation,
@@ -127,6 +129,8 @@ fun handleDeepLinkAction(
                         "envelope" to (action.link.getQueryParameter("envelope").orEmpty()),
                         "state" to (action.link.getQueryParameter("state").orEmpty()),
                         "callback" to (action.link.getQueryParameter("callback").orEmpty()),
+                        "deliveryUrl" to (action.link.getQueryParameter("deliveryUrl").orEmpty()),
+                        "deliveryToken" to (action.link.getQueryParameter("deliveryToken").orEmpty()),
                     )
                 )
             )

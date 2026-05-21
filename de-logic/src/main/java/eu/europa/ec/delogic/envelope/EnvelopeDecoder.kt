@@ -54,6 +54,13 @@ class EnvelopeDecoder(
             if (payee.merchantId.isBlank()) return EnvelopeDecodeResult.Failure.Malformed
             if (payee.merchantName.isBlank()) return EnvelopeDecodeResult.Failure.Malformed
         }
+        if (envelope.type == OperationType.WITHDRAW_TO_WALLET) {
+            // Per spec §withdrawToWallet: bank app MUST set holderPubRequest=true
+            // and MUST NOT set holderPub — that field is the wallet's to fill in
+            // before signing. Either omission is a contract violation; fail closed.
+            if (envelope.holderPubRequest != true) return EnvelopeDecodeResult.Failure.Malformed
+            if (envelope.holderPub != null) return EnvelopeDecodeResult.Failure.Malformed
+        }
 
         val expiry = runCatching { Instant.parse(envelope.expiry) }.getOrNull()
             ?: return EnvelopeDecodeResult.Failure.Malformed

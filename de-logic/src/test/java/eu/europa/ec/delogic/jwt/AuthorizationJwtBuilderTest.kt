@@ -119,6 +119,55 @@ class AuthorizationJwtBuilderTest {
     }
 
     @Test
+    fun `embeds the withdrawToWallet holderPub JWK verbatim in the envelope claim`() {
+        // When the wallet signs a withdrawToWallet envelope it must include the
+        // freshly-generated holderPub JWK so the bank backend can deep-equal-check
+        // it against the /deliver request body. See specs/protocols/de-wallet-app-api.md
+        // §withdrawToWallet step 8.
+        val holderPub = Json.parseToJsonElement(
+            """
+            { "kty": "EC", "crv": "P-256",
+              "x": "VlBcrYJCpwSEjlrAGT6JJzkn-yT7xZlBJgyP7lThM3M",
+              "y": "PJSF99v0DKKlNxe2yPwbE2WzfwoR-q5MoY4o7tQO7w8" }
+            """.trimIndent(),
+        ).jsonObject
+
+        val withdrawEnvelope = envelope.copy(
+            type = OperationType.WITHDRAW_TO_WALLET,
+            holderPubRequest = true,
+            holderPub = holderPub,
+        )
+
+        val built = AuthorizationJwtBuilder(
+            clock = Clock.fixed(Instant.parse("2026-05-05T12:00:00Z"), ZoneOffset.UTC),
+            nonceProvider = { _ -> "AAAA" },
+        ).build(withdrawEnvelope, deviceJwk)
+
+        val payload = decodeJsonSegment(built.payloadB64)
+        val embedded = payload["envelope"] as JsonObject
+        val embeddedHolderPub = embedded["holderPub"] as JsonObject
+        assertEquals(holderPub["x"], embeddedHolderPub["x"])
+        assertEquals(holderPub["y"], embeddedHolderPub["y"])
+        assertEquals("P-256", embeddedHolderPub.field("crv"))
+    }
+
+    @Test
+    fun `omits holderPubRequest and holderPub from the envelope claim when null`() {
+        // encodeDefaults=false in the builder's Json means null optional fields
+        // do not pollute the signed payload. Bank backends pinned on payment /
+        // top-up envelope shape would otherwise reject the JWT outright.
+        val built = AuthorizationJwtBuilder(
+            clock = Clock.fixed(Instant.parse("2026-05-05T12:00:00Z"), ZoneOffset.UTC),
+            nonceProvider = { _ -> "AAAA" },
+        ).build(envelope, deviceJwk)
+
+        val payload = decodeJsonSegment(built.payloadB64)
+        val embedded = payload["envelope"] as JsonObject
+        assertEquals(null, embedded["holderPub"])
+        assertEquals(null, embedded["holderPubRequest"])
+    }
+
+    @Test
     fun `assemble appends base64url signature as the third JWS segment`() = runTest {
         val builder = AuthorizationJwtBuilder(
             clock = Clock.fixed(Instant.parse("2026-05-05T12:00:00Z"), ZoneOffset.UTC),

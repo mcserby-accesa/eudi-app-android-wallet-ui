@@ -147,7 +147,9 @@ private fun ConfirmBody(
         // signed JWT carries the full envelope verbatim.
         when (envelope.type) {
             OperationType.PAYMENT -> envelope.payee?.let { PaymentPrimary(it) }
-            OperationType.TOP_UP, OperationType.REDEEM -> Text(
+            OperationType.TOP_UP,
+            OperationType.REDEEM,
+            OperationType.WITHDRAW_TO_WALLET -> Text(
                 text = envelope.description,
                 style = MaterialTheme.typography.bodyLarge,
             )
@@ -252,12 +254,14 @@ private fun titleFor(type: OperationType): String = when (type) {
     OperationType.TOP_UP -> "Authorise top-up"
     OperationType.REDEEM -> "Authorise redemption"
     OperationType.PAYMENT -> "Authorise payment"
+    OperationType.WITHDRAW_TO_WALLET -> "Withdraw onto this device"
 }
 
 private fun labelFor(type: OperationType): String = when (type) {
     OperationType.TOP_UP -> "Top up"
     OperationType.REDEEM -> "Redeem"
     OperationType.PAYMENT -> "Payment"
+    OperationType.WITHDRAW_TO_WALLET -> "Withdraw"
 }
 
 private fun formatAmount(cents: Long, currency: String): String {

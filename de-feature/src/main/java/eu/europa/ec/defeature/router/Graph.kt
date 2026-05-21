@@ -38,14 +38,20 @@ fun NavGraphBuilder.featureDeGraph(navController: NavController) {
                 navArgument("envelope") { type = NavType.StringType; defaultValue = "" },
                 navArgument("state") { type = NavType.StringType; defaultValue = "" },
                 navArgument("callback") { type = NavType.StringType; defaultValue = "" },
+                navArgument("deliveryUrl") { type = NavType.StringType; defaultValue = "" },
+                navArgument("deliveryToken") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { backStackEntry ->
             val envelope = backStackEntry.arguments?.getString("envelope").orEmpty()
             val state = backStackEntry.arguments?.getString("state").orEmpty()
             val callback = backStackEntry.arguments?.getString("callback").orEmpty()
+            val deliveryUrl = backStackEntry.arguments?.getString("deliveryUrl").orEmpty()
+            val deliveryToken = backStackEntry.arguments?.getString("deliveryToken").orEmpty()
             AuthorizeOperationScreen(
                 navController = navController,
-                viewModel = koinViewModel { parametersOf(envelope, state, callback) },
+                viewModel = koinViewModel {
+                    parametersOf(envelope, state, callback, deliveryUrl, deliveryToken)
+                },
             )
         }
     }
