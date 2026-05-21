@@ -6,12 +6,16 @@
 package eu.europa.ec.destorage
 
 import eu.europa.ec.businesslogic.controller.storage.PrefsController
+import eu.europa.ec.delogic.jws.OfflineTokenPayload
+import eu.europa.ec.delogic.jws.OfflineTokenVerifier
+import eu.europa.ec.delogic.jws.OfflineTokenVerifyResult
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Clock
@@ -115,11 +119,12 @@ class SimulatedSecureElementImplTest {
     @Test
     fun `state persists across instances backed by the same PrefsController`() = runTest {
         val prefs = InMemoryPrefs()
-        val first = SimulatedSecureElementImpl(prefs, clock = fixedClock(), aliasFactory = aliasFactory())
+        val verifier = AcceptingVerifier()
+        val first = SimulatedSecureElementImpl(prefs, verifier, fixedClock(), aliasFactory())
         val handle = first.generateHolderKey()
         first.storeTokens(handle, listOf(token("S1", 750)))
 
-        val second = SimulatedSecureElementImpl(prefs, clock = fixedClock(), aliasFactory = aliasFactory())
+        val second = SimulatedSecureElementImpl(prefs, verifier, fixedClock(), aliasFactory())
         assertEquals(2L, second.txCounter())
         assertEquals(750L, second.offlineBalance())
         assertEquals(1, second.listHeldTokens().size)
@@ -128,7 +133,7 @@ class SimulatedSecureElementImplTest {
     @Test
     fun `reset wipes counter tokens and aliases`() = runTest {
         val prefs = InMemoryPrefs()
-        val se = SimulatedSecureElementImpl(prefs, clock = fixedClock(), aliasFactory = aliasFactory())
+        val se = SimulatedSecureElementImpl(prefs, AcceptingVerifier(), fixedClock(), aliasFactory())
         val handle = se.generateHolderKey()
         se.storeTokens(handle, listOf(token("S1", 100)))
         assertTrue(prefs.contains("de.se.tx_counter"))
@@ -142,10 +147,76 @@ class SimulatedSecureElementImplTest {
         assertTrue(se.storeTokens(handle, listOf(token("S2", 100))) is StoreResult.Rejected)
     }
 
+    @Test
+    fun `holderPub mismatch from verifier triggers Rejected at SE boundary`() = runTest {
+        val se = SimulatedSecureElementImpl(
+            InMemoryPrefs(),
+            verifier = object : OfflineTokenVerifier {
+                override fun verify(compactJws: String, expectedHolderPub: JsonObject) =
+                    OfflineTokenVerifyResult.Failure.HolderPubMismatch
+            },
+            fixedClock(),
+            aliasFactory(),
+        )
+        val handle = se.generateHolderKey()
+
+        val result = se.storeTokens(handle, listOf(token("S1", 500)))
+        assertTrue(result is StoreResult.Rejected)
+        assertEquals("holder_pub_mismatch", (result as StoreResult.Rejected).reason)
+        assertEquals(1L, se.txCounter()) // keygen still bumped; storage did not
+        assertEquals(0L, se.offlineBalance())
+    }
+
+    @Test
+    fun `signature-invalid from verifier triggers Rejected token_signature_invalid`() = runTest {
+        val se = SimulatedSecureElementImpl(
+            InMemoryPrefs(),
+            verifier = object : OfflineTokenVerifier {
+                override fun verify(compactJws: String, expectedHolderPub: JsonObject) =
+                    OfflineTokenVerifyResult.Failure.SignatureInvalid("chain")
+            },
+            fixedClock(),
+            aliasFactory(),
+        )
+        val handle = se.generateHolderKey()
+        val result = se.storeTokens(handle, listOf(token("S1", 500)))
+        assertEquals(
+            "token_signature_invalid",
+            (result as StoreResult.Rejected).reason,
+        )
+    }
+
     // ---- Helpers ---------------------------------------------------------------
 
     private fun newSe(): SimulatedSecureElement =
-        SimulatedSecureElementImpl(InMemoryPrefs(), clock = fixedClock(), aliasFactory = aliasFactory())
+        SimulatedSecureElementImpl(InMemoryPrefs(), AcceptingVerifier(), fixedClock(), aliasFactory())
+
+    /**
+     * Fake verifier used by the persistence-focused tests: every token is
+     * accepted, with serial / amount / currency mirrored from the input
+     * (so the SE's defense-in-depth envelope_mismatch check doesn't fire)
+     * and `holderPub` echoed from the caller-supplied expected JWK.
+     */
+    private class AcceptingVerifier : OfflineTokenVerifier {
+        override fun verify(
+            compactJws: String,
+            expectedHolderPub: JsonObject,
+        ): OfflineTokenVerifyResult {
+            // Stub format: stub.<serial>.<amount>.<currency>.signature
+            val parts = compactJws.split(".")
+            return OfflineTokenVerifyResult.Ok(
+                OfflineTokenPayload(
+                    serial = parts[1],
+                    amount = parts[2].toLong(),
+                    currency = parts[3],
+                    ncbBic = "NCBEUDE",
+                    holderPub = expectedHolderPub,
+                    issuedAt = Instant.parse("2026-06-01T00:00:00Z"),
+                    expiry = Instant.parse("2031-06-01T00:00:00Z"),
+                ),
+            )
+        }
+    }
 
     private fun fixedClock(): Clock =
         Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC)
@@ -160,7 +231,11 @@ class SimulatedSecureElementImplTest {
             serial = serial,
             amount = amount,
             currency = "EUR",
-            jws = "stub.$serial.signature",
+            // The fake verifier parses this stub string to recover the
+            // payload values so the SE's envelope_mismatch defense
+            // (which checks wire-row fields match verified payload) is
+            // satisfied without us minting real JWSes here.
+            jws = "stub.$serial.$amount.EUR.signature",
         )
 
     private class InMemoryPrefs : PrefsController {

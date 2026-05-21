@@ -20,11 +20,17 @@ import androidx.lifecycle.viewModelScope
 import eu.europa.ec.authenticationlogic.controller.authentication.DeviceAuthenticationResult
 import eu.europa.ec.authenticationlogic.model.BiometricCrypto
 import eu.europa.ec.commonfeature.interactor.DeviceAuthenticationInteractor
+import eu.europa.ec.delogic.delivery.DeliveryResult
+import eu.europa.ec.delogic.delivery.WithdrawDeliveryClient
 import eu.europa.ec.delogic.envelope.EnvelopeDecodeResult
 import eu.europa.ec.delogic.envelope.EnvelopeDecoder
 import eu.europa.ec.delogic.envelope.OperationEnvelope
 import eu.europa.ec.delogic.envelope.OperationType
 import eu.europa.ec.delogic.jwt.AuthorizationJwtBuilder
+import eu.europa.ec.destorage.HolderKeyHandle
+import eu.europa.ec.destorage.OfflineTokenJws
+import eu.europa.ec.destorage.SimulatedSecureElement
+import eu.europa.ec.destorage.StoreResult
 import eu.europa.ec.uilogic.mvi.MviViewModel
 import eu.europa.ec.uilogic.mvi.ViewEvent
 import eu.europa.ec.uilogic.mvi.ViewSideEffect
@@ -33,21 +39,27 @@ import kotlinx.coroutines.launch
 import org.koin.core.annotation.InjectedParam
 import org.koin.core.annotation.KoinViewModel
 
-/** Spec error codes returned to the bank app via the callback URI. */
+/**
+ * Spec error codes returned to the bank app via the callback URI. The
+ * withdrawToWallet-specific codes are defined in `mobile-wallet.md`
+ * §M4a Error mapping; the bank-app's `mapWalletError` is the consumer.
+ */
 internal object AuthorizeErrorCode {
     const val INVALID_ENVELOPE = "invalid_envelope"
     const val EXPIRED = "expired"
     const val USER_CANCELLED = "user_cancelled"
     const val WALLET_NOT_PROVISIONED = "wallet_not_provisioned"
 
-    /**
-     * Transient placeholder returned by the withdrawToWallet confirm action
-     * until slice 4 wires the direct-POST `/deliver` flow. NOT part of the
-     * spec's defined error vocabulary — remove this constant + its branch
-     * in [AuthorizeOperationViewModel] once token delivery is implemented.
-     */
-    const val WITHDRAW_NOT_IMPLEMENTED = "withdraw_not_implemented"
+    // withdrawToWallet-specific
+    const val DELIVERY_INVALID = "delivery_invalid"
+    const val DELIVERY_TOKEN_INVALID = "delivery_token_invalid"
+    const val TOKEN_SIGNATURE_INVALID = "token_signature_invalid"
+    const val HOLDER_PUB_MISMATCH = "holder_pub_mismatch"
 }
+
+/** Success-status code (only used for withdrawToWallet's delivered branch). */
+internal const val WITHDRAW_DELIVERED = "delivered"
+internal const val WITHDRAW_DELIVERED_PARTIAL = "delivered_partial"
 
 sealed interface State : ViewState {
     /** Envelope rejected at decode time; auto-fire the callback and finish. */
@@ -89,15 +101,17 @@ class AuthorizeOperationViewModel(
     @InjectedParam private val stateArg: String,
     @InjectedParam private val callbackArg: String,
     // `withdrawToWallet`-only: target URL the wallet POSTs the signed
-    // authorisation + holderPub to after biometric confirm, and the single-use
-    // bearer it sets on that POST. Empty strings for every other operation type.
-    // Slice 1 just plumbs them through; consumed in slice 4.
+    // authorisation + holderPub to after biometric confirm, and the
+    // single-use bearer it sets on that POST. Empty strings for every
+    // other operation type.
     @InjectedParam private val deliveryUrlArg: String,
     @InjectedParam private val deliveryTokenArg: String,
     private val envelopeDecoder: EnvelopeDecoder,
     private val authorizationJwtBuilder: AuthorizationJwtBuilder,
     private val pidCredentialSigner: PidCredentialSigner,
     private val deviceAuthenticationInteractor: DeviceAuthenticationInteractor,
+    private val simulatedSecureElement: SimulatedSecureElement,
+    private val deliveryClient: WithdrawDeliveryClient,
 ) : MviViewModel<Event, State, Effect>() {
 
     override fun setInitialState(): State {
@@ -139,22 +153,131 @@ class AuthorizeOperationViewModel(
 
             is Event.Confirm -> {
                 val s = viewState.value as? State.ReadyToConfirm ?: return
-                // withdrawToWallet must NOT return the JWT via the callback URI
-                // — per spec §withdrawToWallet, the wallet POSTs directly to
-                // `deliveryUrl`. Slice 4 wires that path; slice 2 short-circuits
-                // with a transient error so the bank-app gets a clean response.
-                if (s.envelope.type == OperationType.WITHDRAW_TO_WALLET) {
-                    fireFailureAndFinish(
-                        callback = s.callback,
-                        callbackState = s.state,
-                        errorCode = AuthorizeErrorCode.WITHDRAW_NOT_IMPLEMENTED,
-                    )
-                    return
-                }
                 setState {
                     State.Signing(envelope = s.envelope, state = s.state, callback = s.callback)
                 }
-                signAndFireCallback(event.context, s.envelope, s.state, s.callback)
+                if (s.envelope.type == OperationType.WITHDRAW_TO_WALLET) {
+                    // Spec §withdrawToWallet: the JWT does NOT travel back to
+                    // the bank-app via the callback URI — the wallet POSTs it
+                    // directly to `deliveryUrl` and surfaces only the result
+                    // status to the bank-app.
+                    withdrawFlow(event.context, s.envelope, s.state, s.callback)
+                } else {
+                    signAndFireCallback(event.context, s.envelope, s.state, s.callback)
+                }
+            }
+        }
+    }
+
+    /**
+     * Post-confirm pipeline for `type: "withdrawToWallet"`:
+     *   1. biometric prompt
+     *   2. simulated SE → fresh holderPub keypair
+     *   3. sign envelope (with holderPub now set) via the PID device key
+     *   4. POST `{walletAuthorisation, holderPub}` to deliveryUrl
+     *   5. verify each minted token + persist into the simulated SE
+     *   6. deep-link back with `status=delivered` (or partial / error)
+     *
+     * Distinct from [signAndFireCallback] because the JWT does NOT
+     * travel through the bank-app — it is consumed by the bank backend
+     * directly at step 4.
+     */
+    private fun withdrawFlow(
+        context: Context,
+        envelope: OperationEnvelope,
+        callbackState: String,
+        callback: String,
+    ) {
+        if (deliveryUrlArg.isBlank() || deliveryTokenArg.isBlank()) {
+            // No delivery channel → can't carry the JWT anywhere safe.
+            // Treat as invalid envelope: the bank-app's intent was malformed
+            // for a withdrawToWallet operation.
+            fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.INVALID_ENVELOPE)
+            return
+        }
+        deviceAuthenticationInteractor.authenticateWithBiometrics(
+            context = context,
+            crypto = BiometricCrypto(cryptoObject = null),
+            notifyOnAuthenticationFailure = true,
+            resultHandler = DeviceAuthenticationResult(
+                onAuthenticationSuccess = {
+                    runWithdrawAfterAuth(envelope, callbackState, callback)
+                },
+                onAuthenticationError = {
+                    fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.USER_CANCELLED)
+                },
+                onAuthenticationFailure = { /* prompt re-enters */ },
+            ),
+        )
+    }
+
+    private fun runWithdrawAfterAuth(
+        envelope: OperationEnvelope,
+        callbackState: String,
+        callback: String,
+    ) {
+        viewModelScope.launch {
+            val resolved = try {
+                pidCredentialSigner.resolveOrThrow()
+            } catch (_: PidCredentialSigner.WalletNotProvisionedException) {
+                fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.WALLET_NOT_PROVISIONED)
+                return@launch
+            }
+
+            val handle: HolderKeyHandle = simulatedSecureElement.generateHolderKey()
+            val signedEnvelope = envelope.copy(holderPub = handle.publicJwk)
+
+            val jws = try {
+                authorizationJwtBuilder.signAndAssemble(
+                    envelope = signedEnvelope,
+                    deviceKeyJwk = resolved.publicJwk,
+                    signer = resolved.signer,
+                )
+            } catch (_: Throwable) {
+                fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.WALLET_NOT_PROVISIONED)
+                return@launch
+            }
+
+            val deliveryResult = deliveryClient.deliver(
+                deliveryUrl = deliveryUrlArg,
+                deliveryToken = deliveryTokenArg,
+                walletAuthorisationJwt = jws,
+                holderPub = handle.publicJwk,
+            )
+            val deliveredTokens = when (deliveryResult) {
+                is DeliveryResult.Ok -> deliveryResult.response.tokens
+                is DeliveryResult.Error -> {
+                    fireFailureAndFinish(callback, callbackState, deliveryResult.code)
+                    return@launch
+                }
+            }
+
+            val storeResult = simulatedSecureElement.storeTokens(
+                handle = handle,
+                tokens = deliveredTokens.map {
+                    OfflineTokenJws(
+                        serial = it.serial,
+                        amount = it.amount,
+                        currency = it.currency,
+                        jws = it.jws,
+                    )
+                },
+            )
+            val status = when (storeResult) {
+                is StoreResult.Ok -> WITHDRAW_DELIVERED
+                is StoreResult.PartialOk -> WITHDRAW_DELIVERED_PARTIAL
+                is StoreResult.Rejected -> {
+                    val errorCode = when (storeResult.reason) {
+                        "holder_pub_mismatch" -> AuthorizeErrorCode.HOLDER_PUB_MISMATCH
+                        "token_signature_invalid" -> AuthorizeErrorCode.TOKEN_SIGNATURE_INVALID
+                        else -> AuthorizeErrorCode.DELIVERY_INVALID
+                    }
+                    fireFailureAndFinish(callback, callbackState, errorCode)
+                    return@launch
+                }
+            }
+            setEffect {
+                Effect.FireCallbackAndFinish(buildStatusUri(callback, callbackState, status))
             }
         }
     }
@@ -236,6 +359,17 @@ class AuthorizeOperationViewModel(
         callback.toUri().buildUpon()
             .appendQueryParameter("state", state)
             .appendQueryParameter("error", errorCode)
+            .build()
+
+    /**
+     * withdrawToWallet success callback shape per spec
+     * §withdrawToWallet step 6: `?state=<state>&status=delivered`
+     * (or `delivered_partial`). The JWT does NOT travel here.
+     */
+    private fun buildStatusUri(callback: String, state: String, status: String): Uri =
+        callback.toUri().buildUpon()
+            .appendQueryParameter("state", state)
+            .appendQueryParameter("status", status)
             .build()
 
     private fun State.callback(): String = when (this) {

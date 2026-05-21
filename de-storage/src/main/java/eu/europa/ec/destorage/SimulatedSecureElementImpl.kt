@@ -17,6 +17,8 @@
 package eu.europa.ec.destorage
 
 import eu.europa.ec.businesslogic.controller.storage.PrefsController
+import eu.europa.ec.delogic.jws.OfflineTokenVerifier
+import eu.europa.ec.delogic.jws.OfflineTokenVerifyResult
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
@@ -38,6 +40,7 @@ import java.util.UUID
 
 class SimulatedSecureElementImpl(
     private val prefs: PrefsController,
+    private val verifier: OfflineTokenVerifier,
     private val clock: java.time.Clock = java.time.Clock.systemUTC(),
     private val aliasFactory: () -> String = { UUID.randomUUID().toString() },
 ) : SimulatedSecureElement {
@@ -77,10 +80,6 @@ class SimulatedSecureElementImpl(
         handle: HolderKeyHandle,
         tokens: List<OfflineTokenJws>,
     ): StoreResult = mutex.withLock {
-        // Slice 3 stub: no JWS signature verification, no holderPub deep-equal.
-        // Both arrive in slice 4 once the NCB trust root is bundled. We do
-        // enforce alias presence (the handle must come from generateHolderKey)
-        // and serial-dedup, which are the persistence-layer invariants.
         val keys = readHolderKeys()
         if (handle.alias !in keys) {
             return@withLock StoreResult.Rejected(reason = "unknown_holder_alias")
@@ -89,22 +88,76 @@ class SimulatedSecureElementImpl(
         val existing = readStoredTokens().associateBy { it.serial }.toMutableMap()
         val now = clock.instant()
         var newCount = 0
+        val rejected = mutableListOf<Pair<String, String>>()  // (serial, reason)
+        var rejectionReason: String? = null
+
         for (token in tokens) {
             if (token.serial in existing) continue
-            existing[token.serial] = StoredTokenRecord(
-                serial = token.serial,
-                amount = token.amount,
-                currency = token.currency,
-                holderKeyAlias = handle.alias,
-                jws = token.jws,
-                storedAt = now.toString(),
-            )
-            newCount += 1
-        }
-        writeStoredTokens(existing.values.toList())
 
+            when (val verify = verifier.verify(token.jws, handle.publicJwk)) {
+                is OfflineTokenVerifyResult.Ok -> {
+                    val payload = verify.payload
+                    // Defense-in-depth: the bank should not be re-shaping
+                    // the token between the JWS payload and the wire row.
+                    if (payload.serial != token.serial ||
+                        payload.amount != token.amount ||
+                        payload.currency != token.currency
+                    ) {
+                        rejected += token.serial to "envelope_mismatch"
+                        rejectionReason = rejectionReason ?: "envelope_mismatch"
+                        continue
+                    }
+                    existing[token.serial] = StoredTokenRecord(
+                        serial = token.serial,
+                        amount = token.amount,
+                        currency = token.currency,
+                        ncbBic = payload.ncbBic,
+                        holderKeyAlias = handle.alias,
+                        jws = token.jws,
+                        issuedAt = payload.issuedAt.toString(),
+                        expiry = payload.expiry.toString(),
+                        storedAt = now.toString(),
+                    )
+                    newCount += 1
+                }
+
+                is OfflineTokenVerifyResult.Failure.HolderPubMismatch -> {
+                    rejected += token.serial to "holder_pub_mismatch"
+                    rejectionReason = rejectionReason ?: "holder_pub_mismatch"
+                }
+
+                is OfflineTokenVerifyResult.Failure.Expired -> {
+                    rejected += token.serial to "expired"
+                    rejectionReason = rejectionReason ?: "expired"
+                }
+
+                is OfflineTokenVerifyResult.Failure.SignatureInvalid,
+                is OfflineTokenVerifyResult.Failure.Malformed -> {
+                    rejected += token.serial to "signature_invalid"
+                    rejectionReason = rejectionReason ?: "token_signature_invalid"
+                }
+            }
+        }
+
+        if (newCount == 0 && rejected.isNotEmpty()) {
+            // All-fail — bubble up as Rejected so the caller maps to a
+            // single bank-app callback error. Leave persisted state untouched.
+            return@withLock StoreResult.Rejected(
+                reason = rejectionReason ?: "token_signature_invalid",
+            )
+        }
+
+        writeStoredTokens(existing.values.toList())
         val newCounter = incrementTxCounter()
         val newBalance = existing.values.sumOf { it.amount }
+
+        if (rejected.isNotEmpty()) {
+            return@withLock StoreResult.PartialOk(
+                storedCount = newCount,
+                rejectedSerials = rejected.map { it.first },
+                reason = rejectionReason ?: "partial",
+            )
+        }
         StoreResult.Ok(
             storedCount = newCount,
             newBalance = newBalance,
@@ -115,23 +168,20 @@ class SimulatedSecureElementImpl(
     override suspend fun offlineBalance(): Long =
         readStoredTokens().sumOf { it.amount }
 
-    override suspend fun listHeldTokens(): List<HeldToken> {
-        // Slice 3: NCB-derived fields (ncbBic, issuedAt, expiry) are not yet
-        // parsed out of the JWS payload — that lands in slice 4 with proper
-        // verification. The drill-in screen renders amount + serial only
-        // until then, so the placeholders below don't surface as UX.
-        val now = clock.instant()
-        return readStoredTokens().map { rec ->
+    override suspend fun listHeldTokens(): List<HeldToken> =
+        readStoredTokens().map { rec ->
             HeldToken(
                 serial = rec.serial,
                 amount = rec.amount,
                 currency = rec.currency,
-                ncbBic = "PENDING",
-                issuedAt = now,
-                expiry = now.plusSeconds(YEARS_5_SECONDS),
+                ncbBic = rec.ncbBic,
+                issuedAt = parseInstantOrEpoch(rec.issuedAt),
+                expiry = parseInstantOrEpoch(rec.expiry),
             )
         }
-    }
+
+    private fun parseInstantOrEpoch(raw: String): Instant =
+        runCatching { Instant.parse(raw) }.getOrDefault(Instant.EPOCH)
 
     override suspend fun txCounter(): Long =
         prefs.getLong(KEY_TX_COUNTER, 0L)
@@ -186,7 +236,6 @@ class SimulatedSecureElementImpl(
         const val KEY_HOLDER_KEYS = "de.se.holder_keys"
         const val KEY_TOKENS = "de.se.tokens"
         const val P256_COMPONENT_LENGTH = 32
-        const val YEARS_5_SECONDS: Long = 5L * 365L * 24L * 60L * 60L
     }
 }
 
@@ -197,14 +246,22 @@ private data class StoredHolderKey(
     @SerialName("jwk") val publicJwk: JsonObject,
 )
 
-/** Encrypted prefs row for a single offline DE token. */
+/**
+ * Encrypted prefs row for a single offline DE token. Fields beyond what
+ * `OfflineTokenJws` carries (ncbBic / issuedAt / expiry) are populated
+ * from the verified token payload at storage time — see
+ * `SimulatedSecureElementImpl.storeTokens`.
+ */
 @Serializable
 private data class StoredTokenRecord(
     val serial: String,
     val amount: Long,
     val currency: String,
+    val ncbBic: String,
     val holderKeyAlias: String,
     val jws: String,
+    val issuedAt: String,
+    val expiry: String,
     val storedAt: String,
 )
 

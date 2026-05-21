@@ -7,12 +7,19 @@ package eu.europa.ec.delogic.di
 
 import eu.europa.ec.businesslogic.controller.storage.PrefsController
 import eu.europa.ec.delogic.config.WalletConfigDecoder
+import eu.europa.ec.delogic.delivery.WithdrawDeliveryClient
 import eu.europa.ec.delogic.envelope.EnvelopeDecoder
+import eu.europa.ec.delogic.jws.BundledNcbTrustStore
+import eu.europa.ec.delogic.jws.NcbTrustStore
+import eu.europa.ec.delogic.jws.OfflineTokenVerifier
+import eu.europa.ec.delogic.jws.OfflineTokenVerifierImpl
 import eu.europa.ec.delogic.jwt.AuthorizationJwtBuilder
 import eu.europa.ec.delogic.jwt.NonceProvider
 import eu.europa.ec.delogic.jwt.SecureRandomNonceProvider
 import eu.europa.ec.delogic.state.WalletStateRepository
 import eu.europa.ec.delogic.state.WalletStateRepositoryImpl
+import eu.europa.ec.resourceslogic.provider.ResourceProvider
+import io.ktor.client.HttpClient
 import org.koin.core.annotation.ComponentScan
 import org.koin.core.annotation.Configuration
 import org.koin.core.annotation.Factory
@@ -41,3 +48,15 @@ fun provideNonceProvider(): NonceProvider = SecureRandomNonceProvider()
 fun provideAuthorizationJwtBuilder(
     nonceProvider: NonceProvider,
 ): AuthorizationJwtBuilder = AuthorizationJwtBuilder(nonceProvider = nonceProvider)
+
+@Single
+fun provideNcbTrustStore(resourceProvider: ResourceProvider): NcbTrustStore =
+    BundledNcbTrustStore(resourceProvider = resourceProvider)
+
+@Factory
+fun provideOfflineTokenVerifier(trustStore: NcbTrustStore): OfflineTokenVerifier =
+    OfflineTokenVerifierImpl(trustStore = trustStore)
+
+@Factory
+fun provideWithdrawDeliveryClient(httpClient: HttpClient): WithdrawDeliveryClient =
+    WithdrawDeliveryClient(httpClient = httpClient)

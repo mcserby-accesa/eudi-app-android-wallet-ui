@@ -20,4 +20,5 @@ moduleConfig {
 
 dependencies {
     implementation(project(LibraryModule.DeLogic.path))
+    implementation(project(LibraryModule.DeStorage.path))
 }
