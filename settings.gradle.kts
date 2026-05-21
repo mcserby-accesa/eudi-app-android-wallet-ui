@@ -71,3 +71,4 @@ include(":storage-logic")
 // Accesa fork additions
 include(":de-logic")
 include(":de-feature")
+include(":de-storage")

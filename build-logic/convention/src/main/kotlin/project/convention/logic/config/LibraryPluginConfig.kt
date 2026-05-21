@@ -39,11 +39,15 @@ enum class LibraryModule(val path: String) {
 
     // Accesa fork additions
     DeLogic(":de-logic"),
-    DeFeature(":de-feature");
+    DeFeature(":de-feature"),
+    DeStorage(":de-storage");
 
     val isLogicModule: Boolean
         get() {
-            return this.name.contains("Logic")
+            // The Accesa `de-storage` module has no UI surface (it encapsulates
+            // the simulated SE applet) — treat it as a logic module so the
+            // convention plugin does not auto-pull `common-feature` in.
+            return this.name.contains("Logic") || this == DeStorage
         }
 
     val isFeatureCommon: Boolean get() = this == CommonFeature
