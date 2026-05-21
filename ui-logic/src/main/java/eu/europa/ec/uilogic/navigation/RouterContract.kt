@@ -134,6 +134,13 @@ sealed class DeScreens {
         parameters = "?envelope={envelope}&state={state}&callback={callback}" +
             "&deliveryUrl={deliveryUrl}&deliveryToken={deliveryToken}"
     )
+
+    /**
+     * Drill-in for the "Wallet holdings" dashboard tile (M4a). Lists the
+     * offline DE tokens persisted in the simulated SE. No deep-link
+     * entry point — only reachable from the home tab tile.
+     */
+    data object WalletHoldings : Screen(name = "DE_WALLET_HOLDINGS")
 }
 
 sealed class ModuleRoute(val route: String) : NavigatableItem {

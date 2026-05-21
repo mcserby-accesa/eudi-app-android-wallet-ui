@@ -47,7 +47,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberMultiplePermissionsState
+import eu.europa.ec.defeature.ui.holdings.WalletHoldingsTile
 import eu.europa.ec.resourceslogic.R
+import eu.europa.ec.uilogic.navigation.DeScreens
 import eu.europa.ec.uilogic.component.AppIconAndText
 import eu.europa.ec.uilogic.component.AppIconAndTextDataUi
 import eu.europa.ec.uilogic.component.AppIcons
@@ -118,6 +120,10 @@ fun HomeScreen(
             onNavigationRequested = {
                 handleNavigationEffect(it, navHostController, context)
             },
+            onWalletHoldingsClick = {
+                // Accesa: navigate to the de-feature drill-in.
+                navHostController.navigate(DeScreens.WalletHoldings.screenRoute)
+            },
             coroutineScope = scope,
             modalBottomSheetState = bottomSheetState,
             paddingValues = paddingValues
@@ -182,6 +188,7 @@ private fun Content(
     effectFlow: Flow<Effect>,
     onEventSent: ((event: Event) -> Unit),
     onNavigationRequested: (navigationEffect: Effect.Navigation) -> Unit,
+    onWalletHoldingsClick: () -> Unit,
     coroutineScope: CoroutineScope,
     modalBottomSheetState: SheetState,
     paddingValues: PaddingValues
@@ -229,6 +236,11 @@ private fun Content(
                 )
             }
         )
+
+        // Accesa: M4a wallet holdings tile. Decoration on the upstream
+        // home tab — the upstream surface owns no Accesa state. See
+        // specs/components/mobile-wallet.md §M4a "Wallet holdings" tile.
+        WalletHoldingsTile(onClick = onWalletHoldingsClick)
     }
 
     if (state.bleAvailability == BleAvailability.NO_PERMISSION) {
@@ -510,6 +522,7 @@ private fun HomeScreenContentPreview() {
                 ),
                 effectFlow = Channel<Effect>().receiveAsFlow(),
                 onNavigationRequested = {},
+                onWalletHoldingsClick = {},
                 coroutineScope = rememberCoroutineScope(),
                 modalBottomSheetState = rememberModalBottomSheetState(),
                 onEventSent = {},

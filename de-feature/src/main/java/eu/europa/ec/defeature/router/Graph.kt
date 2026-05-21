@@ -12,6 +12,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.navigation
 import androidx.navigation.navArgument
 import eu.europa.ec.defeature.ui.authorize.AuthorizeOperationScreen
+import eu.europa.ec.defeature.ui.holdings.WalletHoldingsScreen
 import eu.europa.ec.defeature.ui.qrconfig.QrConfigScreen
 import eu.europa.ec.uilogic.navigation.DeScreens
 import eu.europa.ec.uilogic.navigation.ModuleRoute
@@ -52,6 +53,15 @@ fun NavGraphBuilder.featureDeGraph(navController: NavController) {
                 viewModel = koinViewModel {
                     parametersOf(envelope, state, callback, deliveryUrl, deliveryToken)
                 },
+            )
+        }
+
+        composable(
+            route = DeScreens.WalletHoldings.screenRoute,
+        ) {
+            WalletHoldingsScreen(
+                navController = navController,
+                viewModel = koinViewModel(),
             )
         }
     }

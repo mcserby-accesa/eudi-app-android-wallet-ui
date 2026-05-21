@@ -32,6 +32,13 @@ moduleConfig {
     module = LibraryModule.DashboardFeature
 }
 
+dependencies {
+    // Accesa: dashboard hosts the "Wallet holdings" tile which delegates
+    // its composable + ViewModel to de-feature. Decoration-only — the
+    // upstream dashboard does not own any Accesa state.
+    implementation(project(LibraryModule.DeFeature.path))
+}
+
 excludeFromKoverReport(
     excludedClasses = KoverExclusionRules.DashboardFeature.classes,
     excludedPackages = KoverExclusionRules.DashboardFeature.packages,
