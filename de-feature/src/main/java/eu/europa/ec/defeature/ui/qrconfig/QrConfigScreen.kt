@@ -16,17 +16,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import eu.europa.ec.defeature.ui.qrconfig.component.CameraQrPickerDialog
 import eu.europa.ec.uilogic.navigation.StartupScreens
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
@@ -43,6 +48,7 @@ fun QrConfigScreen(
         effectFlow = viewModel.effect,
         onInputChange = { viewModel.setEvent(Event.InputChanged(it)) },
         onSubmit = { viewModel.setEvent(Event.Submit) },
+        onScanned = { viewModel.setEvent(Event.Scanned(it)) },
         onNavigationRequested = { effect ->
             when (effect) {
                 Effect.Navigation.ToSplash -> {
@@ -62,8 +68,11 @@ private fun Content(
     effectFlow: Flow<Effect>,
     onInputChange: (String) -> Unit,
     onSubmit: () -> Unit,
+    onScanned: (String) -> Unit,
     onNavigationRequested: (Effect.Navigation) -> Unit,
 ) {
+    var showScanner by remember { mutableStateOf(false) }
+
     Scaffold { paddingValues ->
         Column(
             modifier = Modifier
@@ -77,13 +86,22 @@ private fun Content(
                 style = MaterialTheme.typography.headlineSmall,
             )
             Text(
-                text = "Paste or type the URL of the workshop's PID issuer below. " +
-                    "On a workshop emulator this is typically http://10.0.2.2:8092.",
+                text = "Scan the workshop QR, or paste the PID issuer URL manually. " +
+                    "On a workshop emulator the URL is typically http://10.0.2.2:8092.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             Spacer(Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = { showScanner = true },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !state.isSubmitting,
+                contentPadding = PaddingValues(vertical = 12.dp),
+            ) {
+                Text("Scan QR code")
+            }
 
             OutlinedTextField(
                 value = state.input,
@@ -109,6 +127,16 @@ private fun Content(
                 Text(if (state.isSubmitting) "Saving…" else "Continue")
             }
         }
+    }
+
+    if (showScanner) {
+        CameraQrPickerDialog(
+            onQrScanned = { value ->
+                showScanner = false
+                onScanned(value)
+            },
+            onDismiss = { showScanner = false },
+        )
     }
 
     LaunchedEffect(Unit) {

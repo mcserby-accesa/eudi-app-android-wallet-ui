@@ -2,8 +2,9 @@
  * Accesa fork — Digital Euro extensions to the EUDI reference wallet.
  * SPDX-License-Identifier: EUPL-1.2
  *
- * First-launch QR-config screen. PR3 ships paste-or-type only; the camera-based
- * QR scanner is folded in once we know which upstream code path to plug into.
+ * First-launch QR-config screen. Accepts either the QR camera path
+ * (Event.Scanned, auto-submits on success) or paste/type fallback
+ * (Event.InputChanged + Event.Submit).
  */
 
 package eu.europa.ec.defeature.ui.qrconfig
@@ -33,6 +34,7 @@ enum class ConfigError {
 
 sealed interface Event : ViewEvent {
     data class InputChanged(val value: String) : Event
+    data class Scanned(val value: String) : Event
     data object Submit : Event
 }
 
@@ -54,6 +56,11 @@ class QrConfigViewModel(
         when (event) {
             is Event.InputChanged -> setState {
                 copy(input = event.value, error = null)
+            }
+
+            is Event.Scanned -> {
+                setState { copy(input = event.value, error = null) }
+                submit()
             }
 
             is Event.Submit -> submit()
