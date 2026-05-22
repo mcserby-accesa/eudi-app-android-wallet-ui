@@ -173,5 +173,13 @@ internal class WalletCoreConfigImpl(
         )
 
     override val walletProviderHost: String
-        get() = "https://dev.wallet-provider.eudiw.dev"
+        // Accesa: upstream's `https://dev.wallet-provider.eudiw.dev` is
+        // currently unreachable from everywhere (workstation + phone both
+        // get HTTP 000 / TLS handshake never completes). Fall back to the
+        // public demo provider, which is what the demo flavor already
+        // uses. The wallet-provider's contract is identical across the
+        // two hosts and the workshop pid-issuer doesn't validate the
+        // attestation anyway. Revert this when the dev host is back, or
+        // when we stand up our own tailscale-hosted stub.
+        get() = "https://wallet-provider.eudiw.dev"
 }
