@@ -3,9 +3,12 @@
  * SPDX-License-Identifier: EUPL-1.2
  *
  * "Wallet holdings" drill-in. Reads the simulated SE's current state
- * once on enter — there is no live observation; if the user withdraws
- * again the user returns through the AUTHORIZE_OPERATION callback and
- * the screen re-loads naturally on next entry.
+ * once on enter — there is no live observation; if the user withdraws,
+ * sends, receives, or reconciles, the screen reloads on next entry.
+ *
+ * Splits the persisted token set into three buckets so the drill-in
+ * can render Live / Sending / Receiving sections per ADR 0011 §7
+ * (TokenState).
  */
 
 package eu.europa.ec.defeature.ui.holdings
@@ -13,6 +16,7 @@ package eu.europa.ec.defeature.ui.holdings
 import androidx.lifecycle.viewModelScope
 import eu.europa.ec.destorage.HeldToken
 import eu.europa.ec.destorage.SimulatedSecureElement
+import eu.europa.ec.destorage.TokenState
 import eu.europa.ec.uilogic.mvi.MviViewModel
 import eu.europa.ec.uilogic.mvi.ViewEvent
 import eu.europa.ec.uilogic.mvi.ViewSideEffect
@@ -23,8 +27,13 @@ import org.koin.core.annotation.KoinViewModel
 sealed interface HoldingsState : ViewState {
     data object Loading : HoldingsState
     data class Loaded(
-        val balanceCents: Long,
-        val tokens: List<HeldToken>,
+        /** Spendable balance — sum of LIVE tokens only. */
+        val liveBalanceCents: Long,
+        /** All non-CONSUMED tokens, in their original order. */
+        val allTokens: List<HeldToken>,
+        val liveTokens: List<HeldToken>,
+        val outgoingPending: List<HeldToken>,
+        val incomingPending: List<HeldToken>,
     ) : HoldingsState
 }
 
@@ -55,7 +64,18 @@ class WalletHoldingsViewModel(
         viewModelScope.launch {
             val balance = simulatedSecureElement.offlineBalance()
             val tokens = simulatedSecureElement.listHeldTokens()
-            setState { HoldingsState.Loaded(balanceCents = balance, tokens = tokens) }
+            val live = tokens.filter { it.state == TokenState.LIVE }
+            val outgoing = tokens.filter { it.state == TokenState.OUTGOING_PENDING }
+            val incoming = tokens.filter { it.state == TokenState.INCOMING_PENDING }
+            setState {
+                HoldingsState.Loaded(
+                    liveBalanceCents = balance,
+                    allTokens = tokens,
+                    liveTokens = live,
+                    outgoingPending = outgoing,
+                    incomingPending = incoming,
+                )
+            }
         }
     }
 }

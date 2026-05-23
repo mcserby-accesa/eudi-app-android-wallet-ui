@@ -14,6 +14,8 @@ import androidx.navigation.navArgument
 import eu.europa.ec.defeature.ui.authorize.AuthorizeOperationScreen
 import eu.europa.ec.defeature.ui.holdings.WalletHoldingsScreen
 import eu.europa.ec.defeature.ui.qrconfig.QrConfigScreen
+import eu.europa.ec.defeature.ui.receive.ReceiveOfflineScreen
+import eu.europa.ec.defeature.ui.send.SendOfflineScreen
 import eu.europa.ec.uilogic.navigation.DeScreens
 import eu.europa.ec.uilogic.navigation.ModuleRoute
 import org.koin.androidx.compose.koinViewModel
@@ -60,6 +62,24 @@ fun NavGraphBuilder.featureDeGraph(navController: NavController) {
             route = DeScreens.WalletHoldings.screenRoute,
         ) {
             WalletHoldingsScreen(
+                navController = navController,
+                viewModel = koinViewModel(),
+            )
+        }
+
+        composable(
+            route = DeScreens.SendOffline.screenRoute,
+        ) {
+            SendOfflineScreen(
+                navController = navController,
+                viewModel = koinViewModel(),
+            )
+        }
+
+        composable(
+            route = DeScreens.ReceiveOffline.screenRoute,
+        ) {
+            ReceiveOfflineScreen(
                 navController = navController,
                 viewModel = koinViewModel(),
             )

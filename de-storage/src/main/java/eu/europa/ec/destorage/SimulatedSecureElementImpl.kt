@@ -202,6 +202,8 @@ class SimulatedSecureElementImpl(
                     expiry = parseInstantOrEpoch(rec.expiry),
                     state = rec.state,
                     transferExpiry = rec.transferExpiry?.let { parseInstantOrEpoch(it) },
+                    jws = rec.jws,
+                    reconciliationUrl = rec.reconciliationUrl,
                 )
             }
 

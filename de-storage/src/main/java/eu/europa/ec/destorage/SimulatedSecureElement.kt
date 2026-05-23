@@ -163,7 +163,16 @@ data class OfflineTokenJws(
     val jws: String,
 )
 
-/** Token entry exposed to the holdings drill-in screen. */
+/**
+ * Token entry exposed to the holdings drill-in screen + the send flow.
+ *
+ * [jws] and [reconciliationUrl] are populated for any token persisted
+ * via M4a withdraw (PR23 onwards). The holdings drill-in does not
+ * render them; the send flow uses [reconciliationUrl] to build the
+ * NFC transferOffer and [jws] to build the transferCommit. Empty /
+ * null values exist only for pre-M4a-PR23 rows that predate the
+ * column migration — safe to skip those for outbound transfers.
+ */
 data class HeldToken(
     val serial: String,
     val amount: Long,
@@ -173,6 +182,8 @@ data class HeldToken(
     val expiry: Instant,
     val state: TokenState,
     val transferExpiry: Instant? = null,
+    val jws: String = "",
+    val reconciliationUrl: String? = null,
 )
 
 /**

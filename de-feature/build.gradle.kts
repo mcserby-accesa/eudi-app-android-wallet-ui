@@ -21,6 +21,7 @@ moduleConfig {
 dependencies {
     implementation(project(LibraryModule.DeLogic.path))
     implementation(project(LibraryModule.DeStorage.path))
+    implementation(project(LibraryModule.DeNfc.path))
 
     implementation(libs.zxing)
     implementation(libs.androidx.camera.core)

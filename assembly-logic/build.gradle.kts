@@ -24,6 +24,7 @@ import project.convention.logic.config.LibraryModule.CoreLogic
 import project.convention.logic.config.LibraryModule.DashboardFeature
 import project.convention.logic.config.LibraryModule.DeFeature
 import project.convention.logic.config.LibraryModule.DeLogic
+import project.convention.logic.config.LibraryModule.DeNfc
 import project.convention.logic.config.LibraryModule.DeStorage
 import project.convention.logic.config.LibraryModule.IssuanceFeature
 import project.convention.logic.config.LibraryModule.NetworkLogic
@@ -80,6 +81,7 @@ dependencies {
     api(project(DeLogic.path))
     api(project(DeFeature.path))
     api(project(DeStorage.path))
+    api(project(DeNfc.path))
 
     // Modules Kover Report
     koverModules.forEach {

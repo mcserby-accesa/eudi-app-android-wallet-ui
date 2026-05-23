@@ -141,6 +141,22 @@ sealed class DeScreens {
      * entry point — only reachable from the home tab tile.
      */
     data object WalletHoldings : Screen(name = "DE_WALLET_HOLDINGS")
+
+    /**
+     * Send offline DE tokens via NFC (M4b sender side). User picks an
+     * amount; wallet selects LIFO LIVE tokens summing exactly to it;
+     * the NFC reader-mode controller drives SELECT → OFFER → COMMIT
+     * against the recipient's HCE. Reachable from the holdings drill-in.
+     */
+    data object SendOffline : Screen(name = "DE_SEND_OFFLINE")
+
+    /**
+     * Receive offline DE tokens via NFC (M4b recipient side). Installs
+     * an NfcTransferSession in the de-nfc registry so the HCE service
+     * starts accepting taps. SE.acceptIncoming persists the incoming
+     * tokens as INCOMING_PENDING.
+     */
+    data object ReceiveOffline : Screen(name = "DE_RECEIVE_OFFLINE")
 }
 
 sealed class ModuleRoute(val route: String) : NavigatableItem {

@@ -2,8 +2,12 @@
  * Accesa fork — Digital Euro extensions to the EUDI reference wallet.
  * SPDX-License-Identifier: EUPL-1.2
  *
- * "Wallet holdings" tile per `mobile-wallet.md` §M4a. Decoration on the
- * upstream home tab — the upstream surface owns no Accesa state.
+ * "Wallet holdings" tile per `mobile-wallet.md` §M4a + §M4b/c. Decoration
+ * on the upstream home tab — the upstream surface owns no Accesa state.
+ *
+ * Tile shows the spendable (LIVE) balance plus small sub-counts when
+ * tokens are pending. Tapping drills into the holdings screen for
+ * detail + Send/Receive CTAs.
  */
 
 package eu.europa.ec.defeature.ui.holdings
@@ -27,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import eu.europa.ec.destorage.SimulatedSecureElement
+import eu.europa.ec.destorage.TokenState
 import eu.europa.ec.uilogic.mvi.MviViewModel
 import eu.europa.ec.uilogic.mvi.ViewEvent
 import eu.europa.ec.uilogic.mvi.ViewSideEffect
@@ -35,12 +40,6 @@ import kotlinx.coroutines.launch
 import org.koin.androidx.compose.koinViewModel
 import org.koin.core.annotation.KoinViewModel
 
-/**
- * Cross-feature entry point for the dashboard. The dashboard module
- * imports this composable directly (see `dashboard-feature → de-feature`
- * dep). The wrapping Koin ViewModel is resolved here so callers don't
- * need to know about [SimulatedSecureElement].
- */
 @Composable
 fun WalletHoldingsTile(
     onClick: () -> Unit,
@@ -66,7 +65,7 @@ fun WalletHoldingsTile(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = formatAmount(state.balanceCents, "EUR"),
+                text = formatAmount(state.liveBalanceCents, "EUR"),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -77,12 +76,19 @@ fun WalletHoldingsTile(
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Text(
-                text = "${state.tokenCount} tokens · simulated SE",
+                text = subCaption(state),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
             )
         }
     }
+}
+
+private fun subCaption(state: TileState): String {
+    val parts = mutableListOf("${state.liveCount} live")
+    if (state.outgoingCount > 0) parts += "${state.outgoingCount} sending"
+    if (state.incomingCount > 0) parts += "${state.incomingCount} receiving"
+    return parts.joinToString(" · ") + " · simulated SE"
 }
 
 private fun formatAmount(cents: Long, currency: String): String {
@@ -93,8 +99,10 @@ private fun formatAmount(cents: Long, currency: String): String {
 }
 
 internal data class TileState(
-    val balanceCents: Long = 0L,
-    val tokenCount: Int = 0,
+    val liveBalanceCents: Long = 0L,
+    val liveCount: Int = 0,
+    val outgoingCount: Int = 0,
+    val incomingCount: Int = 0,
 ) : ViewState
 
 internal sealed interface TileEvent : ViewEvent {
@@ -120,7 +128,17 @@ internal class WalletHoldingsTileViewModel(
         viewModelScope.launch {
             val balance = simulatedSecureElement.offlineBalance()
             val tokens = simulatedSecureElement.listHeldTokens()
-            setState { copy(balanceCents = balance, tokenCount = tokens.size) }
+            val live = tokens.count { it.state == TokenState.LIVE }
+            val out = tokens.count { it.state == TokenState.OUTGOING_PENDING }
+            val incoming = tokens.count { it.state == TokenState.INCOMING_PENDING }
+            setState {
+                copy(
+                    liveBalanceCents = balance,
+                    liveCount = live,
+                    outgoingCount = out,
+                    incomingCount = incoming,
+                )
+            }
         }
     }
 }
