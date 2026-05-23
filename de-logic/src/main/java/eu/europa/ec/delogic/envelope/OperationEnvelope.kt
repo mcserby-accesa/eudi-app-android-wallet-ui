@@ -25,6 +25,15 @@ enum class OperationType {
 
     @SerialName("withdrawToWallet")
     WITHDRAW_TO_WALLET,
+
+    /**
+     * Citizen self-redeem (M4c-self-redeem) or recipient sync after NFC
+     * tap (M4c-sync). Differentiated at the wallet by `envelope.serials`:
+     * present → sync (bank-specified token set); absent → self-redeem
+     * (wallet picks LIFO).
+     */
+    @SerialName("offlineRedeem")
+    OFFLINE_REDEEM,
 }
 
 @Serializable
@@ -85,4 +94,24 @@ data class OperationEnvelope(
      * against the request body's `holderPub` field at `/deliver` verification time.
      */
     val holderPub: JsonObject? = null,
+
+    /**
+     * Only set for `type == OFFLINE_REDEEM`. Routes the credit to either
+     * the citizen's online DE holding (`"online-de"` — default for
+     * consumer self-redeem and consumer recipient sync) or to bank fiat
+     * balance (`"bank-balance"` — merchant recipient sync). The wallet
+     * signs it verbatim; the bank's verifier cross-checks at the
+     * `/sync/deliver` or `/redeem-self/deliver` step.
+     */
+    val targetPlane: String? = null,
+
+    /**
+     * Only set for `type == OFFLINE_REDEEM` on the sync (recipient)
+     * path. The bank-app retrieved the wallet's `INCOMING_PENDING`
+     * serial set via the wallet ContentProvider (PR27) and pinned it
+     * here so the wallet redeems exactly those tokens. Absent on the
+     * self-redeem path — the wallet picks LIFO from its LIVE tokens
+     * via [SimulatedSecureElement.buildSelfRedeem].
+     */
+    val serials: List<String>? = null,
 )

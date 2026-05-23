@@ -106,6 +106,20 @@ interface SimulatedSecureElement {
     ): AcceptResult
 
     /**
+     * Fetch the persisted (token, transferProof, reconciliationUrl)
+     * tuples for the listed [serials], filtering to rows currently in
+     * INCOMING_PENDING state. Used by the M4c-sync render branch: the
+     * bank-app supplies the serial list (sourced via the wallet
+     * ContentProvider); the wallet rebuilds the redeem request body
+     * from these.
+     *
+     * Rows whose serial is not in storage or whose state is not
+     * INCOMING_PENDING are silently dropped. The caller is responsible
+     * for surfacing a mismatch to the bank-app.
+     */
+    suspend fun getIncomingItems(serials: List<String>): List<IncomingItem>
+
+    /**
      * Wallet-direct call to the bank's serial-status proxy (ADR 0011 §8
      * amendment). Used by the reconcile pass to decide rollback vs
      * finalise for OUTGOING and INCOMING pending entries.

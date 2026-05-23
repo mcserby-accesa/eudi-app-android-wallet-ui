@@ -145,6 +145,13 @@ private fun RouteConfirmBody(
             onConfirm = onConfirm,
         )
 
+        OperationType.OFFLINE_REDEEM -> OfflineRedeemConfirmBody(
+            envelope = envelope,
+            enabled = enabled,
+            onCancel = onCancel,
+            onConfirm = onConfirm,
+        )
+
         OperationType.TOP_UP,
         OperationType.REDEEM,
         OperationType.PAYMENT -> ConfirmBody(
@@ -183,9 +190,10 @@ private fun ConfirmBody(
                 text = envelope.description,
                 style = MaterialTheme.typography.bodyLarge,
             )
-            // withdrawToWallet renders via [WithdrawConfirmBody] — RouteConfirmBody
-            // dispatches before this composable is ever called.
-            OperationType.WITHDRAW_TO_WALLET -> Unit
+            // withdrawToWallet renders via [WithdrawConfirmBody] and
+            // offlineRedeem via [OfflineRedeemConfirmBody] — RouteConfirmBody
+            // dispatches before this composable is ever called for them.
+            OperationType.WITHDRAW_TO_WALLET, OperationType.OFFLINE_REDEEM -> Unit
         }
 
         Spacer(Modifier.height(8.dp))
@@ -325,6 +333,104 @@ private fun WithdrawConfirmBody(
 }
 
 /**
+ * Confirm-screen render branch for `type: "offlineRedeem"` (M4c).
+ * Used for BOTH M4c-sync (recipient cashes in NFC-received tokens —
+ * `envelope.serials` present) and M4c-self-redeem (citizen converts
+ * own LIVE tokens back to online DE — `serials` absent). Layout
+ * mirrors `mobile-wallet.md` §M4b+M4c handoff — big amount, bank
+ * line, description verbatim, simulated-SE disclaimer.
+ */
+@Composable
+private fun OfflineRedeemConfirmBody(
+    envelope: OperationEnvelope,
+    enabled: Boolean,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val isSync = !envelope.serials.isNullOrEmpty()
+    val title = if (isSync) "Receive Digital Euro" else "Redeem to your account"
+    val accountLine = if (envelope.targetPlane == "bank-balance") {
+        "Into your bank balance at ${envelope.bankDisplayName ?: envelope.bic}"
+    } else {
+        "Into your Digital Euro at ${envelope.bankDisplayName ?: envelope.bic}"
+    }
+    val info = if (isSync) {
+        "ⓘ ${envelope.serials!!.size} token(s) from the wallet's simulated SE — workshop demo only."
+    } else {
+        "ⓘ This will move offline tokens back to your online balance."
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+
+        Text(
+            text = formatAmount(envelope.amount, envelope.currency),
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+        )
+
+        Text(
+            text = accountLine,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Text(
+            text = envelope.description,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+
+        Text(
+            text = info,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        if (!enabled) {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 12.dp),
+                ) { Text("Cancel") }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(vertical = 12.dp),
+                ) { Text("Confirm") }
+            }
+        }
+
+        Text(
+            text = "Simulated SE — workshop demo. Not a real Secure Element.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+/**
  * Payment primary block per `mobile-wallet.md` §AUTHORIZE_OPERATION
  * `type: "payment"`:
  *
@@ -387,6 +493,9 @@ private fun titleFor(type: OperationType): String = when (type) {
     OperationType.REDEEM -> "Authorise redemption"
     OperationType.PAYMENT -> "Authorise payment"
     OperationType.WITHDRAW_TO_WALLET -> "Withdraw onto this device"
+    // OfflineRedeem renders via [OfflineRedeemConfirmBody]; this fallback only
+    // reaches ConfirmBody if a future branch forgets to dispatch.
+    OperationType.OFFLINE_REDEEM -> "Authorise offline redeem"
 }
 
 private fun labelFor(type: OperationType): String = when (type) {
@@ -394,6 +503,7 @@ private fun labelFor(type: OperationType): String = when (type) {
     OperationType.REDEEM -> "Redeem"
     OperationType.PAYMENT -> "Payment"
     OperationType.WITHDRAW_TO_WALLET -> "Withdraw"
+    OperationType.OFFLINE_REDEEM -> "Offline redeem"
 }
 
 private fun formatAmount(cents: Long, currency: String): String {

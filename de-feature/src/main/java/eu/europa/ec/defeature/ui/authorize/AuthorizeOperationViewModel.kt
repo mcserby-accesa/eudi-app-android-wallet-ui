@@ -21,6 +21,8 @@ import eu.europa.ec.authenticationlogic.controller.authentication.DeviceAuthenti
 import eu.europa.ec.authenticationlogic.model.BiometricCrypto
 import eu.europa.ec.commonfeature.interactor.DeviceAuthenticationInteractor
 import eu.europa.ec.delogic.delivery.DeliveryResult
+import eu.europa.ec.delogic.delivery.RedeemProofRow
+import eu.europa.ec.delogic.delivery.RedeemTokenRow
 import eu.europa.ec.delogic.delivery.WithdrawDeliveryClient
 import eu.europa.ec.delogic.envelope.EnvelopeDecodeResult
 import eu.europa.ec.delogic.envelope.EnvelopeDecoder
@@ -55,6 +57,13 @@ internal object AuthorizeErrorCode {
     const val DELIVERY_TOKEN_INVALID = "delivery_token_invalid"
     const val TOKEN_SIGNATURE_INVALID = "token_signature_invalid"
     const val HOLDER_PUB_MISMATCH = "holder_pub_mismatch"
+
+    // offlineRedeem-specific (M4c — sync + self-redeem)
+    const val SERIAL_ALREADY_SPENT = "serial_already_spent"
+    const val TRANSFER_PROOF_EXPIRED = "transfer_proof_expired"
+    const val TRANSFER_PROOF_INVALID = "transfer_proof_invalid"
+    const val TOKENS_NOT_IN_STORAGE = "tokens_not_in_storage"
+    const val INSUFFICIENT_OFFLINE_TOKENS = "insufficient_offline_tokens"
 }
 
 /** Success-status code (only used for withdrawToWallet's delivered branch). */
@@ -156,14 +165,23 @@ class AuthorizeOperationViewModel(
                 setState {
                     State.Signing(envelope = s.envelope, state = s.state, callback = s.callback)
                 }
-                if (s.envelope.type == OperationType.WITHDRAW_TO_WALLET) {
-                    // Spec §withdrawToWallet: the JWT does NOT travel back to
-                    // the bank-app via the callback URI — the wallet POSTs it
-                    // directly to `deliveryUrl` and surfaces only the result
-                    // status to the bank-app.
-                    withdrawFlow(event.context, s.envelope, s.state, s.callback)
-                } else {
-                    signAndFireCallback(event.context, s.envelope, s.state, s.callback)
+                when (s.envelope.type) {
+                    OperationType.WITHDRAW_TO_WALLET ->
+                        // Spec §withdrawToWallet: the JWT does NOT travel back to
+                        // the bank-app via the callback URI — the wallet POSTs it
+                        // directly to `deliveryUrl` and surfaces only the result
+                        // status to the bank-app.
+                        withdrawFlow(event.context, s.envelope, s.state, s.callback)
+
+                    OperationType.OFFLINE_REDEEM ->
+                        // M4c — same wallet-direct POST shape as withdraw but
+                        // inverse direction: the wallet hands tokens + transfer
+                        // proofs to the bank, the bank credits per
+                        // envelope.targetPlane.
+                        offlineRedeemFlow(event.context, s.envelope, s.state, s.callback)
+
+                    else ->
+                        signAndFireCallback(event.context, s.envelope, s.state, s.callback)
                 }
             }
         }
@@ -280,6 +298,125 @@ class AuthorizeOperationViewModel(
             }
             setEffect {
                 Effect.FireCallbackAndFinish(buildStatusUri(callback, callbackState, status))
+            }
+        }
+    }
+
+    /**
+     * Post-confirm pipeline for `type: "offlineRedeem"` (M4c). Two sub-paths
+     * gated by `envelope.serials`:
+     *
+     *   - present  → sync (recipient cashes in tokens received via NFC); the
+     *                wallet looks up INCOMING_PENDING items from de-storage,
+     *                builds the redeem body from the stored JWS + proof.
+     *   - absent   → self-redeem; the wallet builds a self-TransferProof per
+     *                LIFO-picked LIVE token via SE.buildSelfRedeem.
+     *
+     * Both sub-paths POST `{walletAuthorisation, tokens, transferProofs}` to
+     * deliveryUrl, then commit the spent tokens via SE.commitRedeemed on 200.
+     */
+    private fun offlineRedeemFlow(
+        context: Context,
+        envelope: OperationEnvelope,
+        callbackState: String,
+        callback: String,
+    ) {
+        if (deliveryUrlArg.isBlank() || deliveryTokenArg.isBlank()) {
+            fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.INVALID_ENVELOPE)
+            return
+        }
+        deviceAuthenticationInteractor.authenticateWithBiometrics(
+            context = context,
+            crypto = BiometricCrypto(cryptoObject = null),
+            notifyOnAuthenticationFailure = true,
+            resultHandler = DeviceAuthenticationResult(
+                onAuthenticationSuccess = {
+                    runOfflineRedeemAfterAuth(envelope, callbackState, callback)
+                },
+                onAuthenticationError = {
+                    fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.USER_CANCELLED)
+                },
+                onAuthenticationFailure = { /* prompt re-enters */ },
+            ),
+        )
+    }
+
+    private fun runOfflineRedeemAfterAuth(
+        envelope: OperationEnvelope,
+        callbackState: String,
+        callback: String,
+    ) {
+        viewModelScope.launch {
+            val resolved = try {
+                pidCredentialSigner.resolveOrThrow()
+            } catch (_: PidCredentialSigner.WalletNotProvisionedException) {
+                fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.WALLET_NOT_PROVISIONED)
+                return@launch
+            }
+
+            // Pick tokens + proofs. Sync path: bank pinned the serial list.
+            // Self-redeem path: wallet picks LIFO via the SE.
+            val (tokenRows, proofRows, serialsToCommit) = run {
+                val pinned = envelope.serials
+                if (!pinned.isNullOrEmpty()) {
+                    val items = simulatedSecureElement.getIncomingItems(pinned)
+                    if (items.size != pinned.size) {
+                        fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.TOKENS_NOT_IN_STORAGE)
+                        return@launch
+                    }
+                    Triple(
+                        items.map {
+                            RedeemTokenRow(it.token.serial, it.token.amount, it.token.currency, it.token.jws)
+                        },
+                        items.map { RedeemProofRow(it.transferProof.tokenSerial, it.transferProof.jws) },
+                        items.map { it.token.serial },
+                    )
+                } else {
+                    val bundle = simulatedSecureElement.buildSelfRedeem(
+                        amount = envelope.amount,
+                        currency = envelope.currency,
+                    )
+                    if (bundle == null) {
+                        fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.INSUFFICIENT_OFFLINE_TOKENS)
+                        return@launch
+                    }
+                    Triple(
+                        bundle.tokens.map { RedeemTokenRow(it.serial, it.amount, it.currency, it.jws) },
+                        bundle.transferProofs.map { RedeemProofRow(it.tokenSerial, it.jws) },
+                        bundle.tokens.map { it.serial },
+                    )
+                }
+            }
+
+            val jws = try {
+                authorizationJwtBuilder.signAndAssemble(
+                    envelope = envelope,
+                    deviceKeyJwk = resolved.publicJwk,
+                    signer = resolved.signer,
+                )
+            } catch (_: Throwable) {
+                fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.WALLET_NOT_PROVISIONED)
+                return@launch
+            }
+
+            val deliveryResult = deliveryClient.redeem(
+                deliveryUrl = deliveryUrlArg,
+                deliveryToken = deliveryTokenArg,
+                walletAuthorisationJwt = jws,
+                tokens = tokenRows,
+                transferProofs = proofRows,
+            )
+            when (deliveryResult) {
+                is DeliveryResult.Ok -> {
+                    simulatedSecureElement.commitRedeemed(serialsToCommit)
+                    setEffect {
+                        Effect.FireCallbackAndFinish(
+                            buildStatusUri(callback, callbackState, WITHDRAW_DELIVERED),
+                        )
+                    }
+                }
+                is DeliveryResult.Error ->
+                    fireFailureAndFinish(callback, callbackState, deliveryResult.code)
             }
         }
     }

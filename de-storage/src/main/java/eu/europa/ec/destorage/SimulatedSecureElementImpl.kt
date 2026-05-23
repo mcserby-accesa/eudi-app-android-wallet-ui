@@ -392,6 +392,28 @@ class SimulatedSecureElementImpl(
     override suspend fun serialStatus(serial: String, reconciliationUrl: String): SerialStatus =
         serialStatusClient.status(reconciliationUrl, serial)
 
+    override suspend fun getIncomingItems(serials: List<String>): List<IncomingItem> = mutex.withLock {
+        val by = readStoredTokens().associateBy { it.serial }
+        serials.mapNotNull { s ->
+            val rec = by[s] ?: return@mapNotNull null
+            if (rec.state != TokenState.INCOMING_PENDING) return@mapNotNull null
+            val proofJws = rec.transferProofJws ?: return@mapNotNull null
+            IncomingItem(
+                token = OfflineTokenJws(
+                    serial = rec.serial,
+                    amount = rec.amount,
+                    currency = rec.currency,
+                    jws = rec.jws,
+                ),
+                transferProof = TransferProofJws(
+                    tokenSerial = rec.serial,
+                    jws = proofJws,
+                ),
+                reconciliationUrl = rec.reconciliationUrl.orEmpty(),
+            )
+        }
+    }
+
     override suspend fun reconcilePending(): ReconcileResult {
         // Snapshot under lock; HTTP calls happen outside the lock to
         // avoid blocking concurrent reads of unrelated SE state.
