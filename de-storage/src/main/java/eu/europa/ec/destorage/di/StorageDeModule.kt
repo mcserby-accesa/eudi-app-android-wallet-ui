@@ -6,7 +6,9 @@
 package eu.europa.ec.destorage.di
 
 import eu.europa.ec.businesslogic.controller.storage.PrefsController
+import eu.europa.ec.delogic.delivery.SerialStatusLookup
 import eu.europa.ec.delogic.jws.OfflineTokenVerifier
+import eu.europa.ec.delogic.jws.TransferProofVerifier
 import eu.europa.ec.destorage.SimulatedSecureElement
 import eu.europa.ec.destorage.SimulatedSecureElementImpl
 import org.koin.core.annotation.ComponentScan
@@ -23,4 +25,11 @@ class StorageDeModule
 fun provideSimulatedSecureElement(
     prefs: PrefsController,
     verifier: OfflineTokenVerifier,
-): SimulatedSecureElement = SimulatedSecureElementImpl(prefs = prefs, verifier = verifier)
+    transferProofVerifier: TransferProofVerifier,
+    serialStatusClient: SerialStatusLookup,
+): SimulatedSecureElement = SimulatedSecureElementImpl(
+    prefs = prefs,
+    verifier = verifier,
+    transferProofVerifier = transferProofVerifier,
+    serialStatusClient = serialStatusClient,
+)

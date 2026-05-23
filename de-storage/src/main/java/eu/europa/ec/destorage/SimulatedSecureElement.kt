@@ -3,9 +3,10 @@
  * SPDX-License-Identifier: EUPL-1.2
  *
  * Simulated Secure Element applet contract per
- * `specs/components/mobile-wallet.md` §M4a handoff. Treated like a real SE:
- * no callers outside `de-feature` reach in, and any operation that the
- * real SE applet would atomic-counter-protect goes through this interface.
+ * `specs/components/mobile-wallet.md` §M4a + §M4b/c handoff. Treated like a
+ * real SE: no callers outside `de-feature` reach in, and any operation that
+ * the real SE applet would atomic-counter-protect goes through this
+ * interface.
  *
  * **Workshop only.** A real SE applet would refuse to release the same
  * token for a transfer twice (per-token serial + per-wallet monotonic
@@ -17,6 +18,7 @@
 
 package eu.europa.ec.destorage
 
+import eu.europa.ec.delogic.delivery.SerialStatus
 import kotlinx.serialization.json.JsonObject
 import java.time.Instant
 
@@ -41,17 +43,19 @@ interface SimulatedSecureElement {
      * re-storing the same serial is a no-op (defence-in-depth against a
      * retry causing duplicates).
      *
-     * Slice 3 ships a no-verify stub of this method — every supplied
-     * token is accepted as long as the handle's alias matches.
-     * Signature + holderPub verification lands in slice 4 with the
-     * delivery client and the bundled NCB trust root.
+     * [reconciliationUrl] is the bank's serial-status base URL from the
+     * `/withdraw-to-wallet/deliver` response (ADR 0011 §8). Stored per
+     * token so the reconcile job can route status queries to the
+     * issuing bank. Nullable for backward-compat with pre-M4b/c bank
+     * builds.
      */
     suspend fun storeTokens(
         handle: HolderKeyHandle,
         tokens: List<OfflineTokenJws>,
+        reconciliationUrl: String? = null,
     ): StoreResult
 
-    /** Total amount of unspent tokens held, in EUR cents. */
+    /** Total amount of LIVE (spendable) tokens held, in EUR cents. */
     suspend fun offlineBalance(): Long
 
     /** Token list for the holdings drill-in screen. Never returns private keys. */
@@ -68,6 +72,72 @@ interface SimulatedSecureElement {
      * (long-press About) alongside `WalletStateRepository.clear()`.
      */
     suspend fun reset()
+
+    // ─── M4b/c surface ────────────────────────────────────────────────────────
+
+    /**
+     * Sender side (ADR 0011 §5). Build a TransferProof for each token in
+     * [serials], addressed to [recipientHolderPub]. Marks the source
+     * tokens OUTGOING_PENDING in persistent storage. Each TransferProof
+     * carries a fresh senderTxCounter that the SE refuses to reuse with
+     * the same serial.
+     *
+     * Returns the signed proofs ready to send over the NFC handshake.
+     * Throws [IllegalStateException] if any serial is missing, not in
+     * LIVE state, or signs to a different amount than the caller asked
+     * for.
+     */
+    suspend fun signTransferProofs(
+        serials: List<String>,
+        recipientHolderPub: JsonObject,
+        currency: String,
+    ): List<TransferProofJws>
+
+    /**
+     * Recipient side (ADR 0011 §5). Verifies each (token, transferProof)
+     * pair against the bundled NCB workshop root + the token's
+     * `holderPub`, cross-checks the proof's `toHolderPub` against
+     * [ourHolderPub], and persists accepted items as INCOMING_PENDING
+     * with the [IncomingItem.reconciliationUrl] attached.
+     */
+    suspend fun acceptIncoming(
+        ourHolderPub: HolderKeyHandle,
+        items: List<IncomingItem>,
+    ): AcceptResult
+
+    /**
+     * Wallet-direct call to the bank's serial-status proxy (ADR 0011 §8
+     * amendment). Used by the reconcile pass to decide rollback vs
+     * finalise for OUTGOING and INCOMING pending entries.
+     */
+    suspend fun serialStatus(serial: String, reconciliationUrl: String): SerialStatus
+
+    /**
+     * Scheduled / on-reconnect reconcile pass. For each OUTGOING_PENDING
+     * past expiry: query the issuing bank, restore-or-consume. For each
+     * INCOMING_PENDING past expiry: query the sender's bank, finalise-or-
+     * drop. Returns the per-bucket serial lists for UI refresh.
+     */
+    suspend fun reconcilePending(): ReconcileResult
+
+    /**
+     * Self-redeem helper (M4c-self-redeem). Picks LIVE tokens summing to
+     * [amount] (LIFO), builds a self-TransferProof per token (fromHolderPub
+     * == toHolderPub == token.holderPub, signed by token.holderPub
+     * private key). Does NOT yet mark tokens spent — the caller invokes
+     * [commitRedeemed] on a successful `/redeem-self/deliver` 200.
+     *
+     * Returns `null` if the LIVE tokens can't sum to [amount] exactly
+     * (workshop tokens are denominated €5/€10/€20/€50).
+     */
+    suspend fun buildSelfRedeem(amount: Long, currency: String): SelfRedeemBundle?
+
+    /**
+     * Called on a successful `/sync/deliver` or `/redeem-self/deliver`
+     * response. Removes the listed tokens from local storage, increments
+     * [txCounter], and decrements [offlineBalance].
+     */
+    suspend fun commitRedeemed(serials: List<String>)
 }
 
 /**
@@ -101,7 +171,18 @@ data class HeldToken(
     val ncbBic: String,
     val issuedAt: Instant,
     val expiry: Instant,
+    val state: TokenState,
+    val transferExpiry: Instant? = null,
 )
+
+/**
+ * Spendable life-cycle state of an offline token (ADR 0011 §7).
+ *  - LIVE              — spendable.
+ *  - OUTGOING_PENDING  — promised away via NFC; awaiting recipient sync or 5-min expiry.
+ *  - INCOMING_PENDING  — received via NFC; awaiting sync to the recipient's bank.
+ *  - CONSUMED          — finalised (either sent + recipient synced, or redeemed); kept for short-term audit.
+ */
+enum class TokenState { LIVE, OUTGOING_PENDING, INCOMING_PENDING, CONSUMED }
 
 sealed class StoreResult {
     data class Ok(
@@ -118,3 +199,52 @@ sealed class StoreResult {
 
     data class Rejected(val reason: String) : StoreResult()
 }
+
+/**
+ * Compact-serialised `de-transferproof+jwt` per ADR 0011 §5, bound to
+ * a specific token serial.
+ */
+data class TransferProofJws(val tokenSerial: String, val jws: String)
+
+/**
+ * One inbound token + its accompanying TransferProof, as delivered over
+ * the NFC `transferCommit` message. [reconciliationUrl] is the sender's
+ * bank URL (delivered separately via `transferOffer`); the SE stores it
+ * per token so a recipient reconcile pass can call the right bank.
+ */
+data class IncomingItem(
+    val token: OfflineTokenJws,
+    val transferProof: TransferProofJws,
+    val reconciliationUrl: String,
+)
+
+sealed class AcceptResult {
+    data class Ok(val acceptedCount: Int) : AcceptResult()
+    data class PartialOk(val accepted: Int, val rejected: List<Rejection>) : AcceptResult()
+    data class AllRejected(val rejections: List<Rejection>) : AcceptResult()
+}
+
+data class Rejection(val serial: String, val reason: RejectionReason)
+
+enum class RejectionReason {
+    TOKEN_SIGNATURE_INVALID,
+    TOKEN_EXPIRED,
+    TRANSFER_PROOF_SIGNATURE_INVALID,
+    TRANSFER_PROOF_EXPIRED,
+    TO_HOLDER_PUB_MISMATCH,
+    SERIAL_MISMATCH,
+    DUPLICATE_SERIAL,
+}
+
+data class ReconcileResult(
+    val restoredOutgoing: List<String>,
+    val finalisedOutgoing: List<String>,
+    val finalisedIncoming: List<String>,
+    val droppedIncoming: List<String>,
+)
+
+data class SelfRedeemBundle(
+    val tokens: List<OfflineTokenJws>,
+    val transferProofs: List<TransferProofJws>,
+    val totalAmount: Long,
+)

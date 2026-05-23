@@ -7,12 +7,16 @@ package eu.europa.ec.delogic.di
 
 import eu.europa.ec.businesslogic.controller.storage.PrefsController
 import eu.europa.ec.delogic.config.WalletConfigDecoder
+import eu.europa.ec.delogic.delivery.BankSerialStatusClient
+import eu.europa.ec.delogic.delivery.SerialStatusLookup
 import eu.europa.ec.delogic.delivery.WithdrawDeliveryClient
 import eu.europa.ec.delogic.envelope.EnvelopeDecoder
 import eu.europa.ec.delogic.jws.BundledNcbTrustStore
 import eu.europa.ec.delogic.jws.NcbTrustStore
 import eu.europa.ec.delogic.jws.OfflineTokenVerifier
 import eu.europa.ec.delogic.jws.OfflineTokenVerifierImpl
+import eu.europa.ec.delogic.jws.TransferProofVerifier
+import eu.europa.ec.delogic.jws.TransferProofVerifierImpl
 import eu.europa.ec.delogic.jwt.AuthorizationJwtBuilder
 import eu.europa.ec.delogic.jwt.NonceProvider
 import eu.europa.ec.delogic.jwt.SecureRandomNonceProvider
@@ -60,3 +64,10 @@ fun provideOfflineTokenVerifier(trustStore: NcbTrustStore): OfflineTokenVerifier
 @Factory
 fun provideWithdrawDeliveryClient(httpClient: HttpClient): WithdrawDeliveryClient =
     WithdrawDeliveryClient(httpClient = httpClient)
+
+@Factory
+fun provideTransferProofVerifier(): TransferProofVerifier = TransferProofVerifierImpl()
+
+@Single
+fun provideSerialStatusLookup(httpClient: HttpClient): SerialStatusLookup =
+    BankSerialStatusClient(httpClient = httpClient)

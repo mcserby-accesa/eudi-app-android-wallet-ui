@@ -39,6 +39,29 @@ object DerSignatureEncoding {
     }
 
     /**
+     * Inverse of [encodeP256]: parse an ASN.1 DER ECDSA signature into a
+     * 64-byte raw `r || s` array per RFC 7518 §3.4. Used when the wallet
+     * signs locally with `java.security.Signature("SHA256withECDSA")`
+     * (returns DER) and needs the JWS form for the third compact-JWS
+     * segment. P-256 only; the SEQUENCE body fits in single-byte DER
+     * length form.
+     */
+    fun decodeP256(der: ByteArray): ByteArray {
+        require(der.isNotEmpty() && der[0] == 0x30.toByte()) {
+            "Expected ASN.1 SEQUENCE tag (0x30) at offset 0"
+        }
+        var i = 2 // skip SEQUENCE tag + single-byte length
+        require(i < der.size && der[i] == 0x02.toByte()) { "Expected INTEGER tag for r" }
+        val rLen = der[i + 1].toInt() and 0xff
+        val rBytes = der.copyOfRange(i + 2, i + 2 + rLen)
+        i += 2 + rLen
+        require(i < der.size && der[i] == 0x02.toByte()) { "Expected INTEGER tag for s" }
+        val sLen = der[i + 1].toInt() and 0xff
+        val sBytes = der.copyOfRange(i + 2, i + 2 + sLen)
+        return eu.europa.ec.delogic.jwt.JoseSignatureEncoding.encodeP256(rBytes, sBytes)
+    }
+
+    /**
      * `BigInteger.toByteArray()` returns the minimal two's-complement
      * representation — exactly what ASN.1 DER's `INTEGER` form needs.
      * Specifically it prepends 0x00 whenever the MSB of the unsigned

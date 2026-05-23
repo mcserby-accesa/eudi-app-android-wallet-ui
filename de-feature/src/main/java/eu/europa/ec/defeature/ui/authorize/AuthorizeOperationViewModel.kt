@@ -252,6 +252,7 @@ class AuthorizeOperationViewModel(
                 }
             }
 
+            val reconciliationUrl = deliveryResult.response.reconciliationUrl
             val storeResult = simulatedSecureElement.storeTokens(
                 handle = handle,
                 tokens = deliveredTokens.map {
@@ -262,6 +263,7 @@ class AuthorizeOperationViewModel(
                         jws = it.jws,
                     )
                 },
+                reconciliationUrl = reconciliationUrl,
             )
             val status = when (storeResult) {
                 is StoreResult.Ok -> WITHDRAW_DELIVERED
