@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="de_offline_transfer_service_label">EUDI Digital Euro — Offline transfer</string>
+    <string name="de_offline_transfer_service_description">Accepts inbound offline Digital Euro tokens via NFC (workshop demo).</string>
+    <string name="de_offline_transfer_aid_group_description">Digital Euro offline transfer</string>
+</resources>

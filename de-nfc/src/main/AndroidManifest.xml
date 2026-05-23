@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  Accesa fork — Digital Euro extensions to the EUDI reference wallet.
+  SPDX-License-Identifier: EUPL-1.2
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature
+        android:name="android.hardware.nfc.hce"
+        android:required="false" />
+
+    <application>
+
+        <!--
+        Offline DE transfer HCE service. Registers AID F0EUDE4B
+        (ADR 0011 §6) so a sender device in reader mode can SELECT-AID
+        this wallet to start a transferOffer / transferAck /
+        transferCommit handshake. Activation gates are enforced by
+        NfcTransferSessionRegistry — the service rejects every APDU
+        unless the receive-offline screen has registered an active
+        callback first.
+        -->
+        <service
+            android:name="eu.europa.ec.denfc.OfflineTransferHostApduService"
+            android:exported="true"
+            android:label="@string/de_offline_transfer_service_label"
+            android:permission="android.permission.BIND_NFC_SERVICE">
+            <intent-filter>
+                <action android:name="android.nfc.cardemulation.action.HOST_APDU_SERVICE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.nfc.cardemulation.host_apdu_service"
+                android:resource="@xml/de_offline_transfer_apdu_service" />
+        </service>
+
+    </application>
+</manifest>

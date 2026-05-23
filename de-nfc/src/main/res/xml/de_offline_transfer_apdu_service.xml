@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+    Accesa fork — Digital Euro extensions to the EUDI reference wallet.
+    SPDX-License-Identifier: EUPL-1.2
+
+    AID groups for the offline-token NFC transfer (ADR 0011 §6).
+    Single proprietary AID `F0EUDE4B` (ASCII "F0EUDE4B"). Category "other"
+    so it doesn't conflict with payment AIDs and doesn't claim to be a
+    contactless EMV instrument.
+-->
+<host-apdu-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/de_offline_transfer_service_description"
+    android:requireDeviceUnlock="false">
+    <aid-group
+        android:category="other"
+        android:description="@string/de_offline_transfer_aid_group_description">
+        <aid-filter android:name="F0EUDE4B" />
+    </aid-group>
+</host-apdu-service>
