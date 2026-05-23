@@ -117,6 +117,14 @@ data class DeliverRequest(
 @Serializable
 data class DeliverResponse(
     val tokens: List<DeliveredToken>,
+    /**
+     * Bank's base URL where the wallet's reconcile job calls
+     * `GET /bank/de/offline/serial-status/{serial}` (ADR 0011 §8).
+     * Stored per token on the SE side. Nullable for backward-compat with
+     * pre-M4b/c bank builds that don't yet serve the field — wallet's
+     * reconcile path no-ops when missing.
+     */
+    val reconciliationUrl: String? = null,
     val newOnlineBalance: Long? = null,
     val newOfflineBalance: Long? = null,
     val eventId: String? = null,
