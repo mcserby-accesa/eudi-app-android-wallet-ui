@@ -27,6 +27,7 @@ import eu.europa.ec.businesslogic.config.ConfigLogic
 import eu.europa.ec.corelogic.config.WalletCoreConfig
 import eu.europa.ec.corelogic.worker.ReIssuanceWorkManager
 import eu.europa.ec.corelogic.worker.RevocationWorkManager
+import eu.europa.ec.destorage.ReconcileScheduler
 import eu.europa.ec.eudi.rqesui.infrastructure.EudiRQESUi
 import org.koin.android.ext.android.inject
 import org.koin.core.KoinApplication
@@ -37,12 +38,17 @@ class Application : Application() {
     private val analyticsController: AnalyticsController by inject()
     private val configLogic: ConfigLogic by inject()
     private val walletCoreConfig: WalletCoreConfig by inject()
+    private val reconcileScheduler: ReconcileScheduler by inject()
 
     override fun onCreate() {
         super.onCreate()
         initializeKoin().initializeRqes()
         initializeReporting()
         initializeWorkManagers()
+        // M4b/c — listen for network reconnects so pending transfers
+        // (OUTGOING / INCOMING past their 5-min expiry) reconcile
+        // automatically against the bank's serial-status proxy.
+        reconcileScheduler.start()
     }
 
     private fun KoinApplication.initializeRqes() {

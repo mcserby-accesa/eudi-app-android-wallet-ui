@@ -5,10 +5,12 @@
 
 package eu.europa.ec.destorage.di
 
+import android.content.Context
 import eu.europa.ec.businesslogic.controller.storage.PrefsController
 import eu.europa.ec.delogic.delivery.SerialStatusLookup
 import eu.europa.ec.delogic.jws.OfflineTokenVerifier
 import eu.europa.ec.delogic.jws.TransferProofVerifier
+import eu.europa.ec.destorage.ReconcileScheduler
 import eu.europa.ec.destorage.SimulatedSecureElement
 import eu.europa.ec.destorage.SimulatedSecureElementImpl
 import org.koin.core.annotation.ComponentScan
@@ -32,4 +34,13 @@ fun provideSimulatedSecureElement(
     verifier = verifier,
     transferProofVerifier = transferProofVerifier,
     serialStatusClient = serialStatusClient,
+)
+
+@Single
+fun provideReconcileScheduler(
+    context: Context,
+    simulatedSecureElement: SimulatedSecureElement,
+): ReconcileScheduler = ReconcileScheduler(
+    context = context,
+    simulatedSecureElement = simulatedSecureElement,
 )

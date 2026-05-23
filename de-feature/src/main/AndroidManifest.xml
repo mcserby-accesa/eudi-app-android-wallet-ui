@@ -1,2 +1,22 @@
-<?xml version="1.0" encoding="utf-8"?>
-<manifest />
+<?xml version="1.0" encoding="utf-8"?><!--
+  Accesa fork — Digital Euro extensions to the EUDI reference wallet.
+  SPDX-License-Identifier: EUPL-1.2
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+
+        <!--
+        Pending-incoming read-only ContentProvider (M4c). Bank-apps on
+        the same device query this to render their "Sync N received
+        tokens" CTA. See PendingIncomingProvider.kt for the column set
+        and the workshop-vs-production security stance.
+        -->
+        <provider
+            android:name="eu.europa.ec.defeature.provider.PendingIncomingProvider"
+            android:authorities="eu.europa.ec.euidi.pending"
+            android:exported="true"
+            android:grantUriPermissions="false" />
+
+    </application>
+</manifest>
