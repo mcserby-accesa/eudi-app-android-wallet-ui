@@ -7,6 +7,9 @@ on:
 
 jobs:
   Secret_Scanning_caller:
+      # Skip on forks — the eudi-infra-ci reusable workflow needs DOJO_*
+      # secrets that only the upstream repo has.
+      if: github.repository == 'eu-digital-identity-wallet/eudi-app-android-wallet-ui'
       uses: eu-digital-identity-wallet/eudi-infra-ci/.github/workflows/secretscanning.yml@main
       secrets:
        DOJO_TOKEN: ${{ secrets.DOJO_TOKEN }}

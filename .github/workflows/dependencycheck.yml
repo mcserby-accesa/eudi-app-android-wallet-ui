@@ -7,6 +7,9 @@ on:
 
 jobs:
  SCA_caller:
+      # Skip on forks — the eudi-infra-ci reusable workflow needs NVD_API_KEY
+      # / DOJO_* secrets that only the upstream repo has.
+      if: github.repository == 'eu-digital-identity-wallet/eudi-app-android-wallet-ui'
       uses: eu-digital-identity-wallet/eudi-infra-ci/.github/workflows/sca_bt.yml@main
       secrets:
        NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
