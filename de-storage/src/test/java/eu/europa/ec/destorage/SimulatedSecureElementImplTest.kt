@@ -264,7 +264,7 @@ class SimulatedSecureElementImplTest {
     // ─── M4b/c — buildSelfRedeem + commitRedeemed ─────────────────────────────
 
     @Test
-    fun `buildSelfRedeem selects LIFO LIVE tokens summing to amount`() = runTest {
+    fun `buildSelfRedeem picks the exact-denomination match when one is available`() = runTest {
         val se = newSe()
         val handle = se.generateHolderKey()
         se.storeTokens(
@@ -274,11 +274,32 @@ class SimulatedSecureElementImplTest {
         val bundle = se.buildSelfRedeem(amount = 1000, currency = "EUR")
         assertTrue("bundle was null", bundle != null)
         assertEquals(1000L, bundle!!.totalAmount)
-        // LIFO: last-stored fits first; storage order is A, B, C → "C" (500) +
-        // one of A (500) covers 1000. The greedy LIFO walk picks C (most recent
-        // storedAt) then A.
-        val serials = bundle.tokens.map { it.serial }
-        assertTrue("serials=$serials", serials.contains("C"))
+        // Greedy largest-fit-first prefers the single B (€10) over two €5s
+        // — this is the correct denomination behaviour: spend the largest
+        // token that fits before fragmenting smaller ones. Spec previously
+        // asked for pure LIFO but pure LIFO orphans tokens (e.g. recent
+        // €10 + older €20, request €20 → LIFO picks €10 and fails).
+        assertEquals(listOf("B"), bundle.tokens.map { it.serial })
+    }
+
+    @Test
+    fun `buildSelfRedeem succeeds when a recent smaller token would orphan a larger match`() = runTest {
+        // Regression for the workshop bug observed on the demo phone
+        // 2026-05-24: user had 1 x €20 (stored earlier) + 1 x €10 (stored
+        // just now). Pure LIFO greedy picked €10 first → couldn't fit
+        // the €20 → returned null → wallet emitted
+        // insufficient_offline_tokens → bank-app loop. Fix: sort by
+        // amount desc (LIFO as tiebreaker).
+        val se = newSe()
+        val handle = se.generateHolderKey()
+        se.storeTokens(handle, listOf(token("OLDER", 2000)))
+        se.storeTokens(handle, listOf(token("NEWER", 1000)))
+
+        val bundle = se.buildSelfRedeem(amount = 2000, currency = "EUR")
+
+        assertTrue("expected non-null bundle for €20 from (€20, €10)", bundle != null)
+        assertEquals(2000L, bundle!!.totalAmount)
+        assertEquals(listOf("OLDER"), bundle.tokens.map { it.serial })
     }
 
     @Test

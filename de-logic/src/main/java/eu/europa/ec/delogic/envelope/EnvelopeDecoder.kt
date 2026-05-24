@@ -75,6 +75,8 @@ class EnvelopeDecoder(
 
     private companion object {
         // Strict — fail closed on unknown fields and unexpected `type` values.
+        // The envelope shape is a stable wallet ⇄ bank-app contract; drift
+        // should surface as invalid_envelope, not be silently absorbed.
         val StrictJson = Json {
             ignoreUnknownKeys = false
             isLenient = false

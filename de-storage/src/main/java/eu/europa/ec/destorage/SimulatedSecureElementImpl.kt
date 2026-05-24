@@ -492,11 +492,20 @@ class SimulatedSecureElementImpl(
     override suspend fun buildSelfRedeem(amount: Long, currency: String): SelfRedeemBundle? = mutex.withLock {
         val keys = readHolderKeys()
         val existing = readStoredTokens().associateBy { it.serial }.toMutableMap()
+        // Greedy largest-fit-first works for canonical Euro denominations
+        // (€5/€10/€20/€50) and never overshoots. LIFO is the tiebreaker
+        // within a denomination so a freshly-withdrawn €10 spends ahead
+        // of an older €10. Spec called for pure LIFO but pure LIFO fails
+        // when a smaller recent token gets picked first and blocks a
+        // larger token that would have summed exactly — e.g. LIFO over
+        // (€20, €10) requesting €20 picks €10 first and orphans €10.
         val live = existing.values
             .filter { it.state == TokenState.LIVE && it.currency == currency }
-            .sortedByDescending { it.storedAt }
+            .sortedWith(
+                compareByDescending<StoredTokenRecord> { it.amount }
+                    .thenByDescending { it.storedAt },
+            )
 
-        // LIFO greedy selection — only attempt if an exact sum is achievable.
         val picked = mutableListOf<StoredTokenRecord>()
         var remaining = amount
         for (rec in live) {

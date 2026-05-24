@@ -21,8 +21,7 @@ import eu.europa.ec.authenticationlogic.controller.authentication.DeviceAuthenti
 import eu.europa.ec.authenticationlogic.model.BiometricCrypto
 import eu.europa.ec.commonfeature.interactor.DeviceAuthenticationInteractor
 import eu.europa.ec.delogic.delivery.DeliveryResult
-import eu.europa.ec.delogic.delivery.RedeemProofRow
-import eu.europa.ec.delogic.delivery.RedeemTokenRow
+import eu.europa.ec.delogic.delivery.RedeemResult
 import eu.europa.ec.delogic.delivery.WithdrawDeliveryClient
 import eu.europa.ec.delogic.envelope.EnvelopeDecodeResult
 import eu.europa.ec.delogic.envelope.EnvelopeDecoder
@@ -69,6 +68,8 @@ internal object AuthorizeErrorCode {
 /** Success-status code (only used for withdrawToWallet's delivered branch). */
 internal const val WITHDRAW_DELIVERED = "delivered"
 internal const val WITHDRAW_DELIVERED_PARTIAL = "delivered_partial"
+
+private const val TAG_OFFLINE_REDEEM = "DeOfflineRedeem"
 
 sealed interface State : ViewState {
     /** Envelope rejected at decode time; auto-fire the callback and finish. */
@@ -347,76 +348,109 @@ class AuthorizeOperationViewModel(
         callback: String,
     ) {
         viewModelScope.launch {
+            android.util.Log.d(TAG_OFFLINE_REDEEM, "begin amount=${envelope.amount} currency=${envelope.currency} serials=${envelope.serials?.size ?: 0} targetPlane=${envelope.targetPlane}")
             val resolved = try {
                 pidCredentialSigner.resolveOrThrow()
             } catch (_: PidCredentialSigner.WalletNotProvisionedException) {
+                android.util.Log.w(TAG_OFFLINE_REDEEM, "WalletNotProvisioned at pidCredentialSigner")
                 fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.WALLET_NOT_PROVISIONED)
                 return@launch
             }
 
             // Pick tokens + proofs. Sync path: bank pinned the serial list.
-            // Self-redeem path: wallet picks LIFO via the SE.
-            val (tokenRows, proofRows, serialsToCommit) = run {
+            // Self-redeem path: wallet picks via the SE (greedy largest-fit-first).
+            //
+            // Wire shape (bank's OfflineRedeemDeliverRequest): tokens and
+            // transferProofs are **parallel arrays of compact JWS strings**;
+            // entry i of transferProofs is bound to tokens[i].
+            val tokenJwses: List<String>
+            val proofJwses: List<String>
+            val serialsToCommit: List<String>
+            try {
                 val pinned = envelope.serials
                 if (!pinned.isNullOrEmpty()) {
                     val items = simulatedSecureElement.getIncomingItems(pinned)
+                    android.util.Log.d(TAG_OFFLINE_REDEEM, "sync path: pinned=${pinned.size} found=${items.size}")
                     if (items.size != pinned.size) {
                         fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.TOKENS_NOT_IN_STORAGE)
                         return@launch
                     }
-                    Triple(
-                        items.map {
-                            RedeemTokenRow(it.token.serial, it.token.amount, it.token.currency, it.token.jws)
-                        },
-                        items.map { RedeemProofRow(it.transferProof.tokenSerial, it.transferProof.jws) },
-                        items.map { it.token.serial },
-                    )
+                    tokenJwses = items.map { it.token.jws }
+                    proofJwses = items.map { it.transferProof.jws }
+                    serialsToCommit = items.map { it.token.serial }
                 } else {
                     val bundle = simulatedSecureElement.buildSelfRedeem(
                         amount = envelope.amount,
                         currency = envelope.currency,
                     )
+                    android.util.Log.d(TAG_OFFLINE_REDEEM, "self-redeem: bundle=${bundle?.tokens?.size ?: "null"} total=${bundle?.totalAmount}")
                     if (bundle == null) {
                         fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.INSUFFICIENT_OFFLINE_TOKENS)
                         return@launch
                     }
-                    Triple(
-                        bundle.tokens.map { RedeemTokenRow(it.serial, it.amount, it.currency, it.jws) },
-                        bundle.transferProofs.map { RedeemProofRow(it.tokenSerial, it.jws) },
-                        bundle.tokens.map { it.serial },
-                    )
+                    tokenJwses = bundle.tokens.map { it.jws }
+                    proofJwses = bundle.transferProofs.map { it.jws }
+                    serialsToCommit = bundle.tokens.map { it.serial }
                 }
+            } catch (t: Throwable) {
+                // Any SE-side exception (private-key decode, signature failure,
+                // storage corruption) used to die silently inside the launch
+                // and strand the user on the spinner. Surface as a typed
+                // error so the bank-app sees a callback.
+                android.util.Log.e(TAG_OFFLINE_REDEEM, "SE selection threw", t)
+                fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.DELIVERY_INVALID)
+                return@launch
             }
+
+            // Bank's OperationCheck requires envelope.serials to match the
+            // tokens in the request body. For the sync path the bank-app
+            // pre-pinned serials; for self-redeem the wallet picked them
+            // via buildSelfRedeem just above. Either way, signing must
+            // commit to the serials cryptographically — otherwise the
+            // bank rejects with AUTHORISATION_INVALID reason=serials_missing.
+            val signedEnvelope = envelope.copy(serials = serialsToCommit)
 
             val jws = try {
                 authorizationJwtBuilder.signAndAssemble(
-                    envelope = envelope,
+                    envelope = signedEnvelope,
                     deviceKeyJwk = resolved.publicJwk,
                     signer = resolved.signer,
                 )
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
+                android.util.Log.e(TAG_OFFLINE_REDEEM, "authz JWT sign threw", t)
                 fireFailureAndFinish(callback, callbackState, AuthorizeErrorCode.WALLET_NOT_PROVISIONED)
                 return@launch
             }
 
-            val deliveryResult = deliveryClient.redeem(
+            android.util.Log.d(TAG_OFFLINE_REDEEM, "POST $deliveryUrlArg tokens=${tokenJwses.size} proofs=${proofJwses.size}")
+            val redeemResult = deliveryClient.redeem(
                 deliveryUrl = deliveryUrlArg,
                 deliveryToken = deliveryTokenArg,
                 walletAuthorisationJwt = jws,
-                tokens = tokenRows,
-                transferProofs = proofRows,
+                tokenJwses = tokenJwses,
+                transferProofJwses = proofJwses,
             )
-            when (deliveryResult) {
-                is DeliveryResult.Ok -> {
-                    simulatedSecureElement.commitRedeemed(serialsToCommit)
+            when (redeemResult) {
+                is RedeemResult.Ok -> {
+                    android.util.Log.d(TAG_OFFLINE_REDEEM, "deliver OK; committing ${serialsToCommit.size} serial(s)")
+                    try {
+                        simulatedSecureElement.commitRedeemed(serialsToCommit)
+                    } catch (t: Throwable) {
+                        // Tokens already redeemed at bank — only local SE
+                        // bookkeeping failed. Still surface delivered to
+                        // bank-app; next reconcile / next opening will clean up.
+                        android.util.Log.e(TAG_OFFLINE_REDEEM, "commitRedeemed threw — bank already credited", t)
+                    }
                     setEffect {
                         Effect.FireCallbackAndFinish(
                             buildStatusUri(callback, callbackState, WITHDRAW_DELIVERED),
                         )
                     }
                 }
-                is DeliveryResult.Error ->
-                    fireFailureAndFinish(callback, callbackState, deliveryResult.code)
+                is RedeemResult.Error -> {
+                    android.util.Log.w(TAG_OFFLINE_REDEEM, "deliver ERROR code=${redeemResult.code}")
+                    fireFailureAndFinish(callback, callbackState, redeemResult.code)
+                }
             }
         }
     }

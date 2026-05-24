@@ -31,10 +31,16 @@ import kotlinx.serialization.json.JsonObject
 class WithdrawDeliveryClient(private val httpClient: HttpClient) {
 
     /**
-     * M4c (sync + self-redeem). POST signed authorisation + the (token,
-     * transferProof) pairs to the bank's `/sync/deliver` or
-     * `/redeem-self/deliver` endpoint — same wire shape, the bank-app's
-     * /initiate response chose the path by URL.
+     * M4c (sync + self-redeem). POST signed authorisation + parallel
+     * arrays of compact-serialised JWS strings to the bank's
+     * `/sync/deliver` or `/redeem-self/deliver` endpoint — same wire
+     * shape; the bank-app's /initiate response chose the path by URL.
+     *
+     * Wire contract per `bank-simulator/.../dto/Dtos.java`
+     * `OfflineRedeemDeliverRequest`:
+     *   { walletAuthorisation: String,
+     *     tokens:         List<String>,   // compact de-offline+jwt JWSes
+     *     transferProofs: List<String> }  // parallel: i pairs with tokens[i]
      *
      * No `holderPub` in the request body: the proofs already bind each
      * token to the right key per ADR 0011 §5 (sync uses recipient's
@@ -45,22 +51,66 @@ class WithdrawDeliveryClient(private val httpClient: HttpClient) {
         deliveryUrl: String,
         deliveryToken: String,
         walletAuthorisationJwt: String,
-        tokens: List<RedeemTokenRow>,
-        transferProofs: List<RedeemProofRow>,
-    ): DeliveryResult = runCatching {
+        tokenJwses: List<String>,
+        transferProofJwses: List<String>,
+    ): RedeemResult = runCatching {
         val response: HttpResponse = httpClient.post(deliveryUrl) {
             bearerAuth(deliveryToken)
             contentType(ContentType.Application.Json)
             setBody(
                 RedeemRequest(
                     walletAuthorisation = walletAuthorisationJwt,
-                    tokens = tokens,
-                    transferProofs = transferProofs,
+                    tokens = tokenJwses,
+                    transferProofs = transferProofJwses,
                 ),
             )
         }
-        mapDeliveryResponse(response)
-    }.getOrElse { DeliveryResult.Error("network_error") }
+        when (response.status) {
+            HttpStatusCode.OK -> {
+                runCatching { response.body<RedeemResponse>() }
+                    .map { RedeemResult.Ok(it) }
+                    .getOrElse { RedeemResult.Error("delivery_invalid") }
+            }
+
+            HttpStatusCode.Unauthorized -> {
+                val errorCode = parseErrorCode(response) ?: "AUTHORISATION_INVALID"
+                RedeemResult.Error(
+                    when (errorCode) {
+                        "DELIVERY_TOKEN_INVALID" -> "delivery_token_invalid"
+                        else -> "auth_rejected"
+                    },
+                )
+            }
+
+            HttpStatusCode.Conflict -> {
+                val errorCode = parseErrorCode(response) ?: ""
+                RedeemResult.Error(
+                    when (errorCode) {
+                        "SERIAL_ALREADY_SPENT" -> "serial_already_spent"
+                        "TRANSFER_PROOF_EXPIRED" -> "transfer_proof_expired"
+                        else -> "delivery_invalid"
+                    },
+                )
+            }
+
+            HttpStatusCode.BadRequest -> {
+                val errorCode = parseErrorCode(response) ?: ""
+                RedeemResult.Error(
+                    when (errorCode) {
+                        "TRANSFER_PROOF_INVALID" -> "transfer_proof_invalid"
+                        "TRANSFER_PROOF_TO_MISMATCH" -> "transfer_proof_invalid"
+                        else -> "delivery_invalid"
+                    },
+                )
+            }
+
+            HttpStatusCode.Gone -> RedeemResult.Error("expired")
+
+            else -> RedeemResult.Error("delivery_invalid")
+        }
+    }.getOrElse {
+        RedeemResult.Error("network_error")
+    }
 
     /**
      * Sends the wallet's signed authorisation + freshly minted holderPub
@@ -131,74 +181,9 @@ class WithdrawDeliveryClient(private val httpClient: HttpClient) {
             ?.groupValues
             ?.getOrNull(1)
     }.getOrNull()
-
-    /**
-     * Shared status-code → DeliveryResult mapping. Used by both `deliver`
-     * (withdraw path; expects DeliverResponse) and `redeem` (sync + self-redeem
-     * path; expects RedeemResponse, but only the 200 branch parses the body).
-     */
-    private suspend fun mapDeliveryResponse(response: HttpResponse): DeliveryResult =
-        when (response.status) {
-            HttpStatusCode.OK -> {
-                runCatching { response.body<DeliverResponse>() }
-                    .map { DeliveryResult.Ok(it) }
-                    .getOrElse { DeliveryResult.Error("delivery_invalid") }
-            }
-            HttpStatusCode.Unauthorized -> {
-                val errorCode = parseErrorCode(response) ?: "AUTHORISATION_INVALID"
-                DeliveryResult.Error(
-                    when (errorCode) {
-                        "DELIVERY_TOKEN_INVALID" -> "delivery_token_invalid"
-                        else -> "auth_rejected"
-                    },
-                )
-            }
-            HttpStatusCode.Conflict -> {
-                val errorCode = parseErrorCode(response) ?: ""
-                DeliveryResult.Error(
-                    when (errorCode) {
-                        "SERIAL_ALREADY_SPENT" -> "serial_already_spent"
-                        "TRANSFER_PROOF_EXPIRED" -> "transfer_proof_expired"
-                        "CAP_EXCEEDED" -> "cap_exceeded"
-                        else -> "cap_exceeded"  // historical default for the withdraw path
-                    },
-                )
-            }
-            HttpStatusCode.BadRequest -> {
-                val errorCode = parseErrorCode(response) ?: ""
-                DeliveryResult.Error(
-                    when (errorCode) {
-                        "TRANSFER_PROOF_INVALID" -> "transfer_proof_invalid"
-                        "TRANSFER_PROOF_TO_MISMATCH" -> "transfer_proof_invalid"
-                        else -> "delivery_invalid"
-                    },
-                )
-            }
-            HttpStatusCode.Gone -> DeliveryResult.Error("expired")
-            else -> DeliveryResult.Error("delivery_invalid")
-        }
 }
 
-@Serializable
-data class RedeemRequest(
-    @SerialName("walletAuthorisation") val walletAuthorisation: String,
-    val tokens: List<RedeemTokenRow>,
-    val transferProofs: List<RedeemProofRow>,
-)
-
-@Serializable
-data class RedeemTokenRow(
-    val serial: String,
-    val amount: Long,
-    val currency: String,
-    val jws: String,
-)
-
-@Serializable
-data class RedeemProofRow(
-    val serial: String,
-    val jws: String,
-)
+// ─── Withdraw (M4a) — unchanged contract ─────────────────────────────────
 
 sealed interface DeliveryResult {
     data class Ok(val response: DeliverResponse) : DeliveryResult
@@ -241,4 +226,36 @@ data class DeliveredToken(
     val amount: Long,
     val currency: String,
     val jws: String,
+)
+
+// ─── Redeem (M4c sync + self-redeem) — strict contract per bank's DTO ────
+
+sealed interface RedeemResult {
+    data class Ok(val response: RedeemResponse) : RedeemResult
+    data class Error(val code: String) : RedeemResult
+}
+
+/**
+ * Mirrors `services/bank-simulator/.../dto/Dtos.OfflineRedeemDeliverRequest`.
+ * Tokens + transferProofs are **parallel arrays of compact-serialised JWS
+ * strings** — entry `i` of `transferProofs` is bound to `tokens[i]`.
+ */
+@Serializable
+data class RedeemRequest(
+    @SerialName("walletAuthorisation") val walletAuthorisation: String,
+    val tokens: List<String>,
+    val transferProofs: List<String>,
+)
+
+/**
+ * Mirrors `services/bank-simulator/.../dto/Dtos.OfflineRedeemDeliverResponse`.
+ * Exactly one of `newOnlineBalance` / `newBankBalance` is populated, depending
+ * on the redeem's `targetPlane`.
+ */
+@Serializable
+data class RedeemResponse(
+    val eventId: String,
+    val totalCredited: Long,
+    val newOnlineBalance: Long? = null,
+    val newBankBalance: Long? = null,
 )
