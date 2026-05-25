@@ -11,13 +11,13 @@
     <application>
 
         <!--
-        Offline DE transfer HCE service. Registers AID F0EUDE4B
-        (ADR 0011 §6) so a sender device in reader mode can SELECT-AID
-        this wallet to start a transferOffer / transferAck /
-        transferCommit handshake. Activation gates are enforced by
-        NfcTransferSessionRegistry — the service rejects every APDU
-        unless the receive-offline screen has registered an active
-        callback first.
+        Offline DE transfer HCE service. Registers AID F0455544453442
+        (7 bytes: 0xF0 proprietary prefix + ASCII "EUDE4B"; ADR 0011 §6)
+        so a sender device in reader mode can SELECT-AID this wallet to
+        start a transferOffer / transferAck / transferCommit handshake.
+        Activation gates are enforced by NfcTransferSessionRegistry —
+        the service rejects every APDU unless the receive-offline
+        screen has registered an active callback first.
         -->
         <service
             android:name="eu.europa.ec.denfc.OfflineTransferHostApduService"

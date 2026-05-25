@@ -10,9 +10,12 @@
 package eu.europa.ec.denfc
 
 /**
- * AID = ASCII "F0EUDE4B" (8 bytes). 0xF0 prefix makes it a
- * proprietary AID per ISO 7816-4 §8.2.1.2. Must match
- * `de_offline_transfer_apdu_service.xml`'s `<aid-filter>`.
+ * Offline-transfer AID, 7 bytes: 0xF0 (ISO 7816-4 §8.2.1.2 "proprietary
+ * unregistered" RID prefix) followed by ASCII "EUDE4B". Hex form:
+ * F0455544453442 — this MUST be byte-identical to the hex string in
+ * `de_offline_transfer_apdu_service.xml`'s `<aid-filter>` or Android's
+ * HCE dispatcher will not route SELECT-AID to our service and the
+ * sender will see a 6A82 ("file not found") status word.
  */
 val OFFLINE_TRANSFER_AID: ByteArray = byteArrayOf(
     0xF0.toByte(), 0x45, 0x55, 0x44, 0x45, 0x34, 0x42,
