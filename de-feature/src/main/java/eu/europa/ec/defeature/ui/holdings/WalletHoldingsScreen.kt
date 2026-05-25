@@ -176,6 +176,14 @@ private fun LoadedBody(
                     TokenRow(token, badge = null)
                 }
             }
+            if (state.recentlyDelivered.isNotEmpty()) {
+                item("hdr-delivered") {
+                    SectionHeader("Delivered")
+                }
+                items(state.recentlyDelivered, key = { "del-${it.serial}" }) { entry ->
+                    DeliveredRow(entry)
+                }
+            }
             if (state.outgoingPending.isNotEmpty()) {
                 item("hdr-out") {
                     SectionHeader("Sending — awaiting recipient sync")
@@ -213,6 +221,29 @@ private fun SectionHeader(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 8.dp),
     )
+}
+
+@Composable
+private fun DeliveredRow(entry: DeliveredEntry) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text(
+                text = "✓ ${formatAmount(entry.amountCents, entry.currency)}",
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                text = "serial ${truncateSerial(entry.serial)} · recipient synced",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
 
 @Composable

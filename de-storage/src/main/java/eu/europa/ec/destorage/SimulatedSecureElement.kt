@@ -127,10 +127,18 @@ interface SimulatedSecureElement {
     suspend fun serialStatus(serial: String, reconciliationUrl: String): SerialStatus
 
     /**
-     * Scheduled / on-reconnect reconcile pass. For each OUTGOING_PENDING
-     * past expiry: query the issuing bank, restore-or-consume. For each
-     * INCOMING_PENDING past expiry: query the sender's bank, finalise-or-
-     * drop. Returns the per-bucket serial lists for UI refresh.
+     * Scheduled / periodic / on-reconnect reconcile pass. Queries the
+     * issuing or sender bank's serial-status proxy for every
+     * OUTGOING_PENDING and INCOMING_PENDING row. SPENT transitions
+     * apply immediately (regardless of transferExpiry) so the
+     * payer's UI clears as soon as the recipient's sync reaches NCB.
+     * UNSPENT restores (OUTGOING_PENDING -> LIVE) and drops
+     * (INCOMING_PENDING -> CONSUMED) are gated on transferExpiry
+     * having passed, so an in-flight transfer the recipient is still
+     * about to sync is never spuriously rolled back. UNKNOWN leaves
+     * the row alone for the next pass. Returns the per-bucket serial
+     * lists plus finalised-outgoing amount/currency details so a
+     * caller can surface a "Delivered" confirmation to the user.
      */
     suspend fun reconcilePending(): ReconcileResult
 
@@ -266,6 +274,21 @@ data class ReconcileResult(
     val finalisedOutgoing: List<String>,
     val finalisedIncoming: List<String>,
     val droppedIncoming: List<String>,
+    /**
+     * Amount/currency for each serial in [finalisedOutgoing]. Same
+     * order as [finalisedOutgoing]. Captured from the SE snapshot
+     * before the transition so a UI can show "Delivered EUR X.XX"
+     * even though the row has already moved to CONSUMED and won't
+     * appear in subsequent [listHeldTokens] reads.
+     */
+    val finalisedOutgoingDetails: List<FinalisedOutgoing> = emptyList(),
+)
+
+/** Per-token detail attached to [ReconcileResult.finalisedOutgoingDetails]. */
+data class FinalisedOutgoing(
+    val serial: String,
+    val amount: Long,
+    val currency: String,
 )
 
 data class SelfRedeemBundle(

@@ -45,9 +45,11 @@ class Application : Application() {
         initializeKoin().initializeRqes()
         initializeReporting()
         initializeWorkManagers()
-        // M4b/c — listen for network reconnects so pending transfers
-        // (OUTGOING / INCOMING past their 5-min expiry) reconcile
-        // automatically against the bank's serial-status proxy.
+        // M4b/c — listen for network reconnects AND poll periodically
+        // (20s while at least one pending row exists) so pending
+        // transfers reconcile against the bank's serial-status proxy.
+        // SPENT applies as soon as it's confirmed; restore-on-UNSPENT
+        // still waits for the 5-min transferExpiry.
         reconcileScheduler.start()
     }
 

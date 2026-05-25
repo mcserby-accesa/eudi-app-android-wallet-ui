@@ -420,33 +420,45 @@ class SimulatedSecureElementImpl(
         val (snapshot, now) = mutex.withLock {
             readStoredTokens() to clock.instant()
         }
-        val ready = snapshot.filter {
-            it.transferExpiry != null &&
-                runCatching { Instant.parse(it.transferExpiry) }.getOrNull()
-                    ?.isBefore(now) == true &&
-                it.state in setOf(TokenState.OUTGOING_PENDING, TokenState.INCOMING_PENDING)
+        // Query the bank for every pending row, regardless of expiry —
+        // SPENT applies immediately so the payer's UI clears as soon as
+        // the recipient's sync reaches NCB. Restore / drop branches
+        // still gate on expiry below so an in-flight transfer the
+        // recipient is still about to sync is never spuriously rolled
+        // back.
+        val pending = snapshot.filter {
+            it.state in setOf(TokenState.OUTGOING_PENDING, TokenState.INCOMING_PENDING)
         }
-        if (ready.isEmpty()) return ReconcileResult(emptyList(), emptyList(), emptyList(), emptyList())
+        if (pending.isEmpty()) return ReconcileResult(emptyList(), emptyList(), emptyList(), emptyList())
 
         val restoredOutgoing = mutableListOf<String>()
         val finalisedOutgoing = mutableListOf<String>()
+        val finalisedOutgoingDetails = mutableListOf<FinalisedOutgoing>()
         val finalisedIncoming = mutableListOf<String>()
         val droppedIncoming = mutableListOf<String>()
 
         val transitions = mutableMapOf<String, TokenState>()  // serial → next state (LIVE or CONSUMED)
-        for (rec in ready) {
+        for (rec in pending) {
             val url = rec.reconciliationUrl ?: continue
             val status = serialStatusClient.status(url, rec.serial)
+            val expired = rec.transferExpiry != null &&
+                runCatching { Instant.parse(rec.transferExpiry) }.getOrNull()
+                    ?.isBefore(now) == true
             when (rec.state) {
                 TokenState.OUTGOING_PENDING -> when (status) {
                     SerialStatus.SPENT -> {
                         transitions[rec.serial] = TokenState.CONSUMED
                         finalisedOutgoing += rec.serial
+                        finalisedOutgoingDetails += FinalisedOutgoing(
+                            serial = rec.serial,
+                            amount = rec.amount,
+                            currency = rec.currency,
+                        )
                     }
-                    SerialStatus.UNSPENT -> {
+                    SerialStatus.UNSPENT -> if (expired) {
                         transitions[rec.serial] = TokenState.LIVE
                         restoredOutgoing += rec.serial
-                    }
+                    } // else: still in 5-min window, leave as-is and retry next pass
                     SerialStatus.UNKNOWN -> {} // leave as-is; retry next pass
                 }
                 TokenState.INCOMING_PENDING -> when (status) {
@@ -455,10 +467,10 @@ class SimulatedSecureElementImpl(
                         transitions[rec.serial] = TokenState.CONSUMED
                         finalisedIncoming += rec.serial
                     }
-                    SerialStatus.UNSPENT -> {
+                    SerialStatus.UNSPENT -> if (expired) {
                         transitions[rec.serial] = TokenState.CONSUMED
                         droppedIncoming += rec.serial
-                    }
+                    } // else: still in 5-min window, leave as-is
                     SerialStatus.UNKNOWN -> {}
                 }
                 else -> {} // not reachable due to filter above
@@ -486,6 +498,7 @@ class SimulatedSecureElementImpl(
             finalisedOutgoing = finalisedOutgoing,
             finalisedIncoming = finalisedIncoming,
             droppedIncoming = droppedIncoming,
+            finalisedOutgoingDetails = finalisedOutgoingDetails,
         )
     }
 

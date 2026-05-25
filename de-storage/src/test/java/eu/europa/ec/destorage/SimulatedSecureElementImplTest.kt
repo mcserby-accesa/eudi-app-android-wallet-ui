@@ -391,6 +391,63 @@ class SimulatedSecureElementImplTest {
     }
 
     @Test
+    fun `reconcilePending finalises OUTGOING_PENDING before expiry when bank already says SPENT`() = runTest {
+        // Workshop fix: payer's UI must clear as soon as recipient's
+        // sync reaches NCB, even though the 5-min transferExpiry hasn't
+        // passed. Previously this branch was gated on expiry.
+        val lookup = SerialStatusLookup { _, _ -> SerialStatus.SPENT }
+        val clock = Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC)
+        val prefs = InMemoryPrefs()
+        val se = newSeWith(prefs = prefs, clock = clock, lookup = lookup)
+        val handle = se.generateHolderKey()
+        se.storeTokens(
+            handle = handle,
+            tokens = listOf(token("S1", 2000)),
+            reconciliationUrl = "https://bank-a.example",
+        )
+        // Mark as OUTGOING_PENDING via the transfer-proof step;
+        // transferExpiry is set to clock + 5 min (i.e. still in the future).
+        se.signTransferProofs(listOf("S1"), freshEcJwk(), "EUR")
+        // Run reconcile WITHOUT advancing the clock — expiry has NOT
+        // passed; only the SPENT bank signal should drive the transition.
+        val result = se.reconcilePending()
+
+        assertEquals(listOf("S1"), result.finalisedOutgoing)
+        assertEquals(
+            listOf(FinalisedOutgoing(serial = "S1", amount = 2000, currency = "EUR")),
+            result.finalisedOutgoingDetails,
+        )
+        assertEquals(0L, se.offlineBalance())
+        // CONSUMED rows are filtered from listHeldTokens, so the row vanishes from the UI.
+        assertTrue(se.listHeldTokens().isEmpty())
+    }
+
+    @Test
+    fun `reconcilePending leaves OUTGOING_PENDING alone on UNSPENT before expiry`() = runTest {
+        // Inverse of the SPENT-before-expiry test: we must NOT restore a
+        // token while the recipient might still legitimately sync it.
+        val lookup = SerialStatusLookup { _, _ -> SerialStatus.UNSPENT }
+        val clock = Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC)
+        val prefs = InMemoryPrefs()
+        val se = newSeWith(prefs = prefs, clock = clock, lookup = lookup)
+        val handle = se.generateHolderKey()
+        se.storeTokens(
+            handle = handle,
+            tokens = listOf(token("S1", 500)),
+            reconciliationUrl = "https://bank-a.example",
+        )
+        se.signTransferProofs(listOf("S1"), freshEcJwk(), "EUR")
+
+        val result = se.reconcilePending()
+
+        assertTrue(result.restoredOutgoing.isEmpty())
+        assertTrue(result.finalisedOutgoing.isEmpty())
+        // Still pending, waiting for either SPENT or expiry.
+        val held = se.listHeldTokens().first()
+        assertEquals(TokenState.OUTGOING_PENDING, held.state)
+    }
+
+    @Test
     fun `reconcilePending leaves tokens alone on UNKNOWN`() = runTest {
         val lookup = SerialStatusLookup { _, _ -> SerialStatus.UNKNOWN }
         val initialClock = Clock.fixed(Instant.parse("2026-06-01T00:00:00Z"), ZoneOffset.UTC)

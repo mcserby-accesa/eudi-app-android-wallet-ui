@@ -10,6 +10,7 @@ import eu.europa.ec.businesslogic.controller.storage.PrefsController
 import eu.europa.ec.delogic.delivery.SerialStatusLookup
 import eu.europa.ec.delogic.jws.OfflineTokenVerifier
 import eu.europa.ec.delogic.jws.TransferProofVerifier
+import eu.europa.ec.destorage.ReconcileEvents
 import eu.europa.ec.destorage.ReconcileScheduler
 import eu.europa.ec.destorage.SimulatedSecureElement
 import eu.europa.ec.destorage.SimulatedSecureElementImpl
@@ -37,10 +38,15 @@ fun provideSimulatedSecureElement(
 )
 
 @Single
+fun provideReconcileEvents(): ReconcileEvents = ReconcileEvents()
+
+@Single
 fun provideReconcileScheduler(
     context: Context,
     simulatedSecureElement: SimulatedSecureElement,
+    reconcileEvents: ReconcileEvents,
 ): ReconcileScheduler = ReconcileScheduler(
     context = context,
     simulatedSecureElement = simulatedSecureElement,
+    reconcileEvents = reconcileEvents,
 )
